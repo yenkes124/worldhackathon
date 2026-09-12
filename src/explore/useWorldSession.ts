@@ -19,7 +19,7 @@ export const isCapacityError = (message: string) =>
   /\b429\b/.test(message) || /no available (capacity|servers)/i.test(message)
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 /** How long the camera travels through the scenery for one node step. */
-export const STEP_TRAVEL_MS = 1_800
+export const STEP_TRAVEL_MS = 1_200
 /** How long a held look input takes to turn the camera a quarter turn. */
 export const TURN_90_MS = 1_200
 export const turnDurationMs = (degrees: number) => (Math.abs(degrees) / 90) * TURN_90_MS
