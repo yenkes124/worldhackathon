@@ -9,6 +9,7 @@ import {
 import { HIGHLIGHT_CONTEXT, RIGHT_HAND_TREMOR } from '../sim/scenario'
 import type {
   LearnerResult,
+  PathEvaluation,
   PlanResult,
   Prediction,
   Scenario,
@@ -123,15 +124,35 @@ export const useSimulation = create<SimulationState>((set, get) => ({
 export const selectCurrentPosition = (state: SimulationState): Vec3 =>
   state.plan.path[state.stepIndex] ?? state.entry
 
-export const selectPrediction = (state: SimulationState): Prediction | null => {
-  const { plan, stepIndex } = state
-  const from = plan.path[stepIndex]
-  const to = plan.path[stepIndex + 1]
-  if (!from || !to) return null
-  const action = actionForStep(from, to)
-  if (!action) return null
-  return predictTransition(from, action)
+// Derived objects are cached on their inputs so subscribers get a stable
+// reference and useSyncExternalStore does not loop.
+const cacheOnArgs = <A, B, T>(compute: (a: A, b: B) => T) => {
+  let cached: { a: A; b: B; value: T } | undefined
+  return (a: A, b: B): T => {
+    if (!cached || cached.a !== a || cached.b !== b) {
+      cached = { a, b, value: compute(a, b) }
+    }
+    return cached.value
+  }
 }
 
-export const selectMetrics = (state: SimulationState) =>
-  evaluatePath(state.plan.path, state.scenario.target)
+const predictionForStep = cacheOnArgs<Vec3[], number, Prediction | null>(
+  (path, stepIndex) => {
+    const from = path[stepIndex]
+    const to = path[stepIndex + 1]
+    if (!from || !to) return null
+    const action = actionForStep(from, to)
+    if (!action) return null
+    return predictTransition(from, action)
+  },
+)
+
+export const selectPrediction = (state: SimulationState): Prediction | null =>
+  predictionForStep(state.plan.path, state.stepIndex)
+
+const evaluationForPath = cacheOnArgs<Vec3[], Vec3, PathEvaluation>(
+  evaluatePath,
+)
+
+export const selectMetrics = (state: SimulationState): PathEvaluation =>
+  evaluationForPath(state.plan.path, state.scenario.target)
