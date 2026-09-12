@@ -1,4 +1,7 @@
 import {
+  ArrowRight,
+  Ban,
+  CheckCircle2,
   Crosshair,
   Eye,
   Map as MapIcon,
@@ -8,8 +11,10 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { knowledgeKey, sameKnowledgeCell } from '../../sim/agentKnowledge'
+import { KNOWLEDGE_LEGEND, KNOWLEDGE_VIEW } from '../../sim/knowledgeView'
 import {
   selectExploreAccuracy,
+  selectExploreCheck,
   selectNextExploreAction,
   useSimulation,
 } from '../../state/simulationStore'
@@ -18,13 +23,21 @@ import { Panel } from './Panel'
 const buttonBase =
   'flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[12px] font-medium transition disabled:cursor-not-allowed disabled:opacity-40'
 
-const LEGEND: { label: string; color: string }[] = [
-  { label: 'Unknown', color: '#475569' },
-  { label: 'Confirmed safe', color: '#34d399' },
-  { label: 'Confirmed restricted', color: '#ff4d6a' },
-  { label: 'Known entry', color: '#22d3ee' },
-  { label: 'Known target', color: '#34ff9b' },
-]
+const cue = 'ring-2 ring-offset-1 ring-offset-slate-950 animate-pulse'
+
+const OUTCOME_TEXT: Record<string, string> = {
+  safe: 'Safety check passed',
+  target: 'Target reached',
+  restricted: 'Safety check rejected the move',
+  out_of_bounds: 'Move leaves the simulated volume',
+}
+
+const Fact = ({ label, value }: { label: string; value: string }) => (
+  <div>
+    <p className="text-[9.5px] tracking-wide uppercase opacity-60">{label}</p>
+    <p className="font-mono text-[11px]">{value}</p>
+  </div>
+)
 
 const Stat = ({
   label,
@@ -63,6 +76,7 @@ export const ExplorePanel = () => {
   const metrics = useSimulation((state) => state.exploreMetrics)
   const decisionLog = useSimulation((state) => state.exploreDecisionLog)
   const accuracy = useSimulation(selectExploreAccuracy)
+  const check = useSimulation(selectExploreCheck)
   const nextAction = useSimulation(selectNextExploreAction)
   const setExploreEntry = useSimulation((state) => state.setExploreEntry)
   const startExploreSession = useSimulation((state) => state.startExploreSession)
@@ -77,6 +91,30 @@ export const ExplorePanel = () => {
 
   const atTarget = sameKnowledgeCell(current, target)
   const canAct = started && !atTarget && Boolean(nextAction ?? prediction)
+  const awaitingCheck = check.verdict === 'pending' && prediction !== null
+  const verdict = awaitingCheck ? null : observation
+
+  const route = proposal?.route ?? []
+  const routeIndex = route.findIndex((position) =>
+    sameKnowledgeCell(position, current),
+  )
+  const routeNext = routeIndex >= 0 ? (route[routeIndex + 1] ?? null) : null
+  // After a rejection the proposal still aims at the restricted cell until the
+  // user replans, which is exactly when the Replan button should be cued.
+  const routeStillBlocked =
+    check.verdict === 'rejected' &&
+    check.cell !== null &&
+    (routeNext === null || sameKnowledgeCell(routeNext, check.cell))
+
+  const cueStep: 'start' | 'predict' | 'verify' | 'replan' | 'done' = !started
+    ? 'start'
+    : atTarget
+      ? 'done'
+      : awaitingCheck
+        ? 'verify'
+        : routeStillBlocked
+          ? 'replan'
+          : 'predict'
 
   return (
     <div className="space-y-4">
@@ -92,33 +130,84 @@ export const ExplorePanel = () => {
           <Stat
             label="Next predicted position"
             value={
-              prediction ? `[${prediction.predictedPosition.join(', ')}]` : '—'
+              awaitingCheck && prediction
+                ? `[${prediction.predictedPosition.join(', ')}]`
+                : '—'
             }
           />
           <Stat
             label="Prediction confidence"
-            value={prediction ? `${prediction.confidence}%` : '—'}
+            value={
+              awaitingCheck && prediction ? `${prediction.confidence}%` : '—'
+            }
           />
           <Stat
             label="Predicted risk"
-            value={prediction ? prediction.predictedRisk : '—'}
-            tone={prediction?.predictedRisk === 'high' ? 'bad' : 'default'}
+            value={awaitingCheck && prediction ? prediction.predictedRisk : '—'}
+            tone={
+              awaitingCheck && prediction?.predictedRisk === 'high'
+                ? 'bad'
+                : 'default'
+            }
           />
         </div>
 
-        <p
-          className={`mt-2.5 rounded-lg border px-3 py-2 text-[11.5px] leading-relaxed ${
-            observation
-              ? observation.allowedToAdvance
-                ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100'
-                : 'border-rose-400/30 bg-rose-500/10 text-rose-100'
-              : 'border-slate-700/50 bg-slate-900/40 text-slate-400'
-          }`}
-        >
-          {observation
-            ? observation.explanation
-            : 'No simulated safety check has run yet.'}
-        </p>
+        {verdict ? (
+          <div
+            className={`mt-2.5 rounded-lg border px-3 py-2.5 ${
+              verdict.allowedToAdvance
+                ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-100'
+                : 'border-rose-400/40 bg-rose-500/10 text-rose-100'
+            }`}
+          >
+            <p className="flex items-center gap-1.5 text-[12.5px] font-semibold">
+              {verdict.allowedToAdvance ? (
+                <CheckCircle2 className="h-4 w-4" aria-hidden />
+              ) : (
+                <Ban className="h-4 w-4" aria-hidden />
+              )}
+              {OUTCOME_TEXT[verdict.outcome] ?? verdict.outcome} · [
+              {verdict.proposedPosition.join(', ')}]
+            </p>
+            <p className="mt-1 text-[11.5px] leading-relaxed">
+              {verdict.explanation}
+            </p>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <Fact
+                label="Probe"
+                value={
+                  verdict.allowedToAdvance
+                    ? `moved to [${verdict.actualPosition.join(', ')}]`
+                    : `stayed at [${verdict.actualPosition.join(', ')}]`
+                }
+              />
+              <Fact
+                label="Cell is now"
+                value={
+                  verdict.knowledgeUpdate
+                    ? KNOWLEDGE_VIEW[verdict.knowledgeUpdate.status].label
+                    : 'unchanged'
+                }
+              />
+              <Fact
+                label="Prediction"
+                value={verdict.predictionMatched ? 'correct' : 'wrong'}
+              />
+            </div>
+          </div>
+        ) : (
+          <p
+            className={`mt-2.5 rounded-lg border px-3 py-2 text-[11.5px] leading-relaxed ${
+              awaitingCheck
+                ? 'border-amber-400/40 bg-amber-400/10 text-amber-100'
+                : 'border-slate-700/50 bg-slate-900/40 text-slate-400'
+            }`}
+          >
+            {awaitingCheck && prediction
+              ? `Predicted [${prediction.predictedPosition.join(', ')}] at ${prediction.confidence}% confidence — unverified. Run the simulated safety check to find out whether it holds.`
+              : 'No simulated safety check has run yet.'}
+          </p>
+        )}
 
         <div className="mt-3 grid grid-cols-3 gap-2">
           <Stat
@@ -149,7 +238,9 @@ export const ExplorePanel = () => {
           <button
             type="button"
             onClick={() => startExploreSession(exploreEntry)}
-            className={`${buttonBase} border-cyan-400/40 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/20`}
+            className={`${buttonBase} border-cyan-400/40 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/20 ${
+              cueStep === 'start' ? `${cue} ring-cyan-400/70` : ''
+            }`}
           >
             <Sparkles className="h-3.5 w-3.5" aria-hidden /> Start Explore
           </button>
@@ -157,7 +248,9 @@ export const ExplorePanel = () => {
             type="button"
             onClick={() => predictExploreAction()}
             disabled={!canAct}
-            className={`${buttonBase} border-sky-400/40 bg-sky-400/10 text-sky-200 hover:bg-sky-400/20`}
+            className={`${buttonBase} border-sky-400/40 bg-sky-400/10 text-sky-200 hover:bg-sky-400/20 ${
+              cueStep === 'predict' ? `${cue} ring-sky-400/70` : ''
+            }`}
           >
             <Eye className="h-3.5 w-3.5" aria-hidden /> Predict Next Step
           </button>
@@ -165,7 +258,9 @@ export const ExplorePanel = () => {
             type="button"
             onClick={() => validateExploreAction()}
             disabled={!canAct}
-            className={`${buttonBase} border-emerald-400/40 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20`}
+            className={`${buttonBase} border-emerald-400/40 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20 ${
+              cueStep === 'verify' ? `${cue} ring-emerald-400/70` : ''
+            }`}
           >
             <ShieldCheck className="h-3.5 w-3.5" aria-hidden /> Run Simulated
             Safety Check
@@ -174,7 +269,9 @@ export const ExplorePanel = () => {
             type="button"
             onClick={() => replanExploreRoute()}
             disabled={!started}
-            className={`${buttonBase} border-purple-400/40 bg-purple-400/10 text-purple-100 hover:bg-purple-400/20`}
+            className={`${buttonBase} border-purple-400/40 bg-purple-400/10 text-purple-100 hover:bg-purple-400/20 ${
+              cueStep === 'replan' ? `${cue} ring-purple-400/70` : ''
+            }`}
           >
             <RefreshCw className="h-3.5 w-3.5" aria-hidden /> Replan
           </button>
@@ -186,12 +283,17 @@ export const ExplorePanel = () => {
             <RotateCcw className="h-3.5 w-3.5" aria-hidden /> Reset Explore
           </button>
         </div>
-        <p className="mt-2.5 text-[11px] text-slate-500">
-          {atTarget
+        <p className="mt-2.5 flex items-start gap-1.5 text-[11px] text-slate-400">
+          <ArrowRight className="mt-[1px] h-3.5 w-3.5 shrink-0" aria-hidden />
+          {cueStep === 'done'
             ? 'The probe has reached the fixed target of the synthetic environment.'
-            : started
-              ? `Proposed next action: ${nextAction ? `${nextAction.label} (${nextAction.hint})` : 'none — replan to propose a route'}.`
-              : 'Pick an entry and start an Explore session.'}
+            : cueStep === 'start'
+              ? 'Pick an entry, then press Start Explore.'
+              : cueStep === 'verify'
+                ? 'Next: run the simulated safety check on the highlighted cell.'
+                : cueStep === 'replan'
+                  ? 'Next: replan — the route still points at the restricted cell.'
+                  : `Next: predict ${nextAction ? `${nextAction.label} (${nextAction.hint})` : 'a step — replan first to propose a route'}.`}
         </p>
       </Panel>
 
@@ -228,21 +330,21 @@ export const ExplorePanel = () => {
 
       <Panel title="Knowledge map" icon={MapIcon}>
         <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-          {LEGEND.map((item) => (
-            <li key={item.label} className="flex items-center gap-2">
+          {KNOWLEDGE_LEGEND.map((status) => (
+            <li key={status} className="flex items-center gap-2">
               <span
                 className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
-                style={{ backgroundColor: item.color }}
+                style={{ backgroundColor: KNOWLEDGE_VIEW[status].color }}
               />
               <span className="truncate text-[10.5px] text-slate-300">
-                {item.label}
+                {KNOWLEDGE_VIEW[status].label}
               </span>
             </li>
           ))}
         </ul>
         <p className="mt-3 text-[10.5px] leading-relaxed text-slate-500">
-          Unknown cells carry no label and no restriction flag until a simulated
-          safety check reveals them.
+          The 3D view shows the knowledge map, not the hidden world: unknown
+          cells stay grey until a simulated safety check reveals them.
         </p>
       </Panel>
 

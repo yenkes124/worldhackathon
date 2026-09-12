@@ -14,6 +14,7 @@ import {
   planAStar,
   runLearner,
 } from '../sim/planner'
+import type { CheckVerdict } from '../sim/knowledgeView'
 import { HIGHLIGHT_CONTEXT, RIGHT_HAND_TREMOR } from '../sim/scenario'
 import { validateExploreMove } from '../sim/simulationValidator'
 import type {
@@ -369,6 +370,28 @@ export const selectExploreAccuracy = (state: SimulationState): number | null => 
   return Math.round((predictionsMatched / predictionsTested) * 100)
 }
 
+export interface ExploreCheck {
+  /** Cell the safety check is about to test, or the one it just tested. */
+  cell: Vec3 | null
+  verdict: CheckVerdict
+}
+
+const exploreCheckFor = (
+  prediction: ExplorePrediction | null,
+  observation: ExploreObservation | null,
+): ExploreCheck => {
+  if (!prediction) return { cell: null, verdict: 'pending' }
+  const checked =
+    observation !== null &&
+    observation.action.id === prediction.action.id &&
+    sameVec(observation.from, prediction.from)
+  if (!checked) return { cell: prediction.predictedPosition, verdict: 'pending' }
+  return {
+    cell: observation.proposedPosition,
+    verdict: observation.allowedToAdvance ? 'passed' : 'rejected',
+  }
+}
+
 export const selectConfirmedSafeCount = (state: SimulationState): number =>
   countKnowledgeStatus(state.exploreKnowledgeMap, 'CONFIRMED_SAFE')
 
@@ -404,3 +427,12 @@ const evaluationForPath = cacheOnArgs<Vec3[], Vec3, PathEvaluation>(
 
 export const selectMetrics = (state: SimulationState): PathEvaluation =>
   evaluationForPath(state.plan.path, state.scenario.target)
+
+const checkForPair = cacheOnArgs<
+  ExplorePrediction | null,
+  ExploreObservation | null,
+  ExploreCheck
+>(exploreCheckFor)
+
+export const selectExploreCheck = (state: SimulationState): ExploreCheck =>
+  checkForPair(state.lastExplorePrediction, state.lastExploreObservation)

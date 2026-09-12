@@ -70,6 +70,13 @@ only by asking the synthetic environment, one simulated safety check at a time.
 
 The loop is **observe → predict → simulated safety check → learn → replan**.
 
+In this mode the 3D scene is the knowledge map, not the hidden world: unknown
+cells are uniform grey, and a cell only takes on a colour once a check has
+revealed it. The cell about to be checked is ringed in amber and labelled
+`CHECKING`; after the check that ring turns green (`PASSED`) or red
+(`REJECTED`), and the arrow line under the buttons always names the next button
+to press.
+
 ### Walk through the default discovery
 
 1. Select **Explore and Learn** in the Mode panel.
@@ -80,13 +87,15 @@ The loop is **observe → predict → simulated safety check → learn → repla
    its confidence, and its predicted risk. A known entry cell gives 100%
    confidence; an unknown cell gives 10% and a risk of *unknown*.
 4. **Run Simulated Safety Check.** The synthetic environment checks that one
-   cell and returns an observation. `[0, 1, 3]` comes back permitted, so the
-   probe advances and the cell is recorded at 100% confidence. A cell that was
-   unknown before the check becomes *confirmed safe*.
+   cell and returns an observation. `[0, 1, 3]` comes back permitted: the
+   verdict block turns green, the probe advances, and the cell is recorded at
+   100% confidence. A cell that was unknown before the check becomes *confirmed
+   safe* and lights up green in the scene.
 5. **Predict Next Step** again. The route wants `[1, 1, 3]`, still unknown.
 6. **Run Simulated Safety Check** again. This time the environment reveals a
-   restricted region. The probe does **not** move, the cell becomes *confirmed
-   restricted*, and the decision log records:
+   restricted region. The verdict block turns red and spells out that the probe
+   stayed put, the cell became *confirmed restricted*, and the prediction was
+   wrong. The cell turns red in the scene and the decision log records:
    *"Route rejected before execution: the synthetic environment revealed a
    restricted region."*
 7. **Replan.** The new route is computed from the updated knowledge map and
@@ -101,9 +110,11 @@ at `[1, 1, 1]`.
 ### What the panel tells you
 
 Current position, next predicted position, prediction confidence, predicted
-risk, the latest simulated safety-check result, safe cells confirmed,
-restricted cells discovered, prediction accuracy, replans completed, the size
-of the current counterfactual route, and a running decision log. The
+risk, a pass/reject verdict for the latest simulated safety check — with
+whether the probe moved, what the cell is now, and whether the prediction was
+right — safe cells confirmed, restricted cells discovered, prediction accuracy,
+replans completed, the size of the current counterfactual route, and a running
+decision log. The
 *Knowledge map* legend names the five states a cell can be in: unknown,
 confirmed safe, confirmed restricted, known entry, known target.
 
@@ -242,6 +253,4 @@ store-driven session that discovers a restriction and still reaches the target.
   not measurements.
 - The learner is a seeded heuristic rollout search for demonstration, not a
   trained reinforcement-learning agent.
-- In Explore mode the 3D voxels still render their true colours, so the scene
-  shows more than the agent knows; the knowledge map itself lives in the panel.
 - No persistence, no backend, and no notion of a patient or a case.

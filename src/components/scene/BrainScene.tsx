@@ -2,8 +2,9 @@ import { OrbitControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { useMemo } from 'react'
 import { key } from '../../sim/grid'
-import { useSimulation } from '../../state/simulationStore'
+import { selectExploreCheck, useSimulation } from '../../state/simulationStore'
 import { BrainShell } from './BrainShell'
+import { KnowledgeVoxels } from './KnowledgeVoxels'
 import { Probe } from './Probe'
 import { TrajectoryLines } from './TrajectoryLines'
 import { VoxelGrid } from './VoxelGrid'
@@ -24,6 +25,9 @@ export const BrainScene = () => {
     (state) => state.exploreRouteProposal,
   )
   const setExploreEntry = useSimulation((state) => state.setExploreEntry)
+  const exploreKnowledge = useSimulation((state) => state.exploreKnowledgeMap)
+  const exploreCurrent = useSimulation((state) => state.exploreCurrentPosition)
+  const exploreCheck = useSimulation(selectExploreCheck)
 
   const isExplore = mode === 'explore'
   const entry = isExplore ? exploreEntry : guidedEntry
@@ -55,13 +59,24 @@ export const BrainScene = () => {
       <pointLight position={[0, 3, 0]} intensity={12} distance={12} color="#22d3ee" />
 
       <BrainShell seed={scenario.seed} />
-      <VoxelGrid
-        entry={entry}
-        target={scenario.target}
-        highlight={highlight}
-        pathKeys={pathKeys}
-        onSelectEntry={isExplore ? setExploreEntry : setEntry}
-      />
+      {isExplore ? (
+        <KnowledgeVoxels
+          knowledge={exploreKnowledge}
+          entry={entry}
+          probe={exploreCurrent}
+          checkedCell={exploreCheck.cell}
+          verdict={exploreCheck.verdict}
+          onSelectEntry={setExploreEntry}
+        />
+      ) : (
+        <VoxelGrid
+          entry={entry}
+          target={scenario.target}
+          highlight={highlight}
+          pathKeys={pathKeys}
+          onSelectEntry={setEntry}
+        />
+      )}
       <TrajectoryLines
         path={plannedRoute}
         stepIndex={isExplore ? 0 : stepIndex}
