@@ -6,10 +6,11 @@ connect to coturn through its public Modal TCP tunnel. The proxy rewrites
 /ice_servers so clients receive the public TCP tunnel URL while retaining the
 per-container credential.
 
-Media is not yet verified on Modal: STUN-only failed, the coturn TCP listener
-is reachable through the tunnel, and TCP TURN allocations complete but the
-Runtime-to-client media connection never reaches a live wire in the Modal
-sandbox. Local Docker works with both TURN/TCP and TURN/UDP.
+Media is not yet verified on Modal: STUN-only failed, while loopback TCP TURN
+allocations and nonzero relay usage counters were observed, the SDK smoke test
+still aborts before frames. An in-container UDP probe reached both the
+container IP and loopback; IP_PKTINFO and SO_REUSEPORT also set successfully.
+Local Docker works with both TURN/TCP and TURN/UDP.
 
     modal deploy reactor/modal_app.py
     # -> https://<workspace>--neurogrid-reactor-runtime-serve.modal.run
@@ -22,7 +23,6 @@ from __future__ import annotations
 import asyncio
 import os
 import secrets as token_secrets
-import socket
 import subprocess
 import threading
 from pathlib import Path
@@ -78,7 +78,6 @@ class Runtime:
         self.tunnel_host, self.tunnel_port = self.tunnel.tcp_socket
         self.turn_secret = token_secrets.token_urlsafe(24)
         self.public_turn_uri = f"turn:{self.tunnel_host}:{self.tunnel_port}?transport=tcp"
-        self.relay_ip = self._relay_ip()
         self.turn = subprocess.Popen(
             [
                 "turnserver",
@@ -86,8 +85,9 @@ class Runtime:
                 "--log-file=stdout",
                 "-v",
                 "--listening-port=3478",
+                "--listening-ip=127.0.0.1",
                 "--listening-ip=0.0.0.0",
-                f"--relay-ip={self.relay_ip}",
+                "--relay-ip=127.0.0.1",
                 "--realm=neurogrid",
                 "--lt-cred-mech",
                 f"--user=neurogrid:{self.turn_secret}",
@@ -121,12 +121,6 @@ class Runtime:
             raise RuntimeError("reverse proxy did not start within 30 seconds")
         if self.proxy_error is not None:
             raise RuntimeError("reverse proxy failed to start") from self.proxy_error
-
-    @staticmethod
-    def _relay_ip() -> str:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.connect(("8.8.8.8", 80))
-            return sock.getsockname()[0]
 
     @modal.exit()
     def stop(self) -> None:
