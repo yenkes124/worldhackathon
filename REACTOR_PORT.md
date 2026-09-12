@@ -169,6 +169,14 @@ container's ICE candidates directly. Provide TURN credentials via the
 public free relays proved unreliable. Any container host with a public UDP
 port (Fly.io, a VM) avoids the TURN requirement entirely.
 
+**Self-hosting on Fly.io (direct UDP, no TURN).** `reactor/fly/` contains a
+standalone Dockerfile and `fly.toml` for the Runtime with HTTP on port 8080
+and a `50000:50019` UDP service range for WebRTC. Fly requires a dedicated
+IPv4 for public UDP and normally requires UDP sockets to bind to
+`fly-global-services`; the current Runtime binds `0.0.0.0`, so verify that
+binding before deployment. STUN is configured to advertise Fly's public
+server-reflexive candidate, avoiding a TURN relay.
+
 ## 6. Closest alternative if Reactor is not wanted
 
 The original React/Three.js app remains the best fit for a client-side
