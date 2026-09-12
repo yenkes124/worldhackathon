@@ -2,12 +2,7 @@ app = "neurogrid-reactor"
 primary_region = "lhr"
 
 [build]
-  dockerfile = "reactor/fly/Dockerfile"
-
-[[vm]]
-  memory = "1gb"
-  cpu_kind = "shared"
-  cpus = 1
+  dockerfile = "Dockerfile"
 
 [env]
   HOST = "0.0.0.0"
