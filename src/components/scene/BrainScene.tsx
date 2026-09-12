@@ -2,25 +2,46 @@ import { OrbitControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { useMemo } from 'react'
 import { key } from '../../sim/grid'
-import { useSimulation } from '../../state/simulationStore'
+import { selectExploreCheck, useSimulation } from '../../state/simulationStore'
 import { BrainShell } from './BrainShell'
+import { KnowledgeVoxels } from './KnowledgeVoxels'
 import { Probe } from './Probe'
 import { TrajectoryLines } from './TrajectoryLines'
 import { VoxelGrid } from './VoxelGrid'
 
 export const BrainScene = () => {
   const scenario = useSimulation((state) => state.scenario)
-  const entry = useSimulation((state) => state.entry)
+  const mode = useSimulation((state) => state.mode)
+  const guidedEntry = useSimulation((state) => state.entry)
   const plan = useSimulation((state) => state.plan)
   const stepIndex = useSimulation((state) => state.stepIndex)
   const showFailed = useSimulation((state) => state.showFailed)
   const failedPath = useSimulation((state) => state.failedPath)
   const highlight = useSimulation((state) => state.highlightContext)
   const setEntry = useSimulation((state) => state.setEntry)
+  const exploreEntry = useSimulation((state) => state.exploreEntry)
+  const exploreVisitedPath = useSimulation((state) => state.exploreVisitedPath)
+  const exploreRouteProposal = useSimulation(
+    (state) => state.exploreRouteProposal,
+  )
+  const setExploreEntry = useSimulation((state) => state.setExploreEntry)
+  const exploreKnowledge = useSimulation((state) => state.exploreKnowledgeMap)
+  const exploreCurrent = useSimulation((state) => state.exploreCurrentPosition)
+  const exploreCheck = useSimulation(selectExploreCheck)
+
+  const isExplore = mode === 'explore'
+  const entry = isExplore ? exploreEntry : guidedEntry
+  // In explore mode the probe only ever follows cells a simulated safety check
+  // has already cleared, so it can never animate into a restricted cell.
+  const probePath = isExplore ? exploreVisitedPath : plan.path
+  const probeStepIndex = isExplore ? exploreVisitedPath.length - 1 : stepIndex
+  const plannedRoute = isExplore
+    ? (exploreRouteProposal?.route ?? exploreVisitedPath)
+    : plan.path
 
   const pathKeys = useMemo(
-    () => new Set(plan.path.map((position) => key(position))),
-    [plan.path],
+    () => new Set(plannedRoute.map((position) => key(position))),
+    [plannedRoute],
   )
 
   return (
@@ -38,20 +59,31 @@ export const BrainScene = () => {
       <pointLight position={[0, 3, 0]} intensity={12} distance={12} color="#22d3ee" />
 
       <BrainShell seed={scenario.seed} />
-      <VoxelGrid
-        entry={entry}
-        target={scenario.target}
-        highlight={highlight}
-        pathKeys={pathKeys}
-        onSelectEntry={setEntry}
-      />
+      {isExplore ? (
+        <KnowledgeVoxels
+          knowledge={exploreKnowledge}
+          entry={entry}
+          probe={exploreCurrent}
+          checkedCell={exploreCheck.cell}
+          verdict={exploreCheck.verdict}
+          onSelectEntry={setExploreEntry}
+        />
+      ) : (
+        <VoxelGrid
+          entry={entry}
+          target={scenario.target}
+          highlight={highlight}
+          pathKeys={pathKeys}
+          onSelectEntry={setEntry}
+        />
+      )}
       <TrajectoryLines
-        path={plan.path}
-        stepIndex={stepIndex}
+        path={plannedRoute}
+        stepIndex={isExplore ? 0 : stepIndex}
         failedPath={failedPath}
-        showFailed={showFailed}
+        showFailed={!isExplore && showFailed}
       />
-      <Probe path={plan.path} stepIndex={stepIndex} />
+      <Probe path={probePath} stepIndex={probeStepIndex} />
 
       <gridHelper
         args={[16, 16, '#1e293b', '#111a2f']}

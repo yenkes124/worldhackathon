@@ -2,9 +2,11 @@ import { Boxes, Brain, Code2, Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { BrainScene } from './components/scene/BrainScene'
 import { ControlPanel } from './components/ui/ControlPanel'
+import { ExplorePanel } from './components/ui/ExplorePanel'
 import { IntroOverlay } from './components/ui/IntroOverlay'
 import { LegendPanel } from './components/ui/LegendPanel'
 import { MetricsPanel } from './components/ui/MetricsPanel'
+import { ModeSelector } from './components/ui/ModeSelector'
 import { PredictionPanel } from './components/ui/PredictionPanel'
 import { SafetyBanner } from './components/ui/SafetyBanner'
 import { BrainExplorer } from './explore/BrainExplorer'
@@ -23,6 +25,7 @@ const VIEWS: { id: View; label: string; icon: typeof Boxes }[] = [
 
 const App = () => {
   const hasStarted = useSimulation((state) => state.hasStarted)
+  const mode = useSimulation((state) => state.mode)
   const isRunning = useSimulation((state) => state.isRunning)
   const tick = useSimulation((state) => state.tick)
   const [view, setView] = useState<View>('explore')
@@ -109,9 +112,16 @@ const App = () => {
               </div>
             </div>
             <aside className="panel-scroll flex flex-col gap-4 pr-1 lg:min-h-0 lg:overflow-y-auto">
-              <PredictionPanel />
-              <ControlPanel />
-              <MetricsPanel />
+              <ModeSelector />
+              {mode === 'guided' ? (
+                <>
+                  <PredictionPanel />
+                  <ControlPanel />
+                  <MetricsPanel />
+                </>
+              ) : (
+                <ExplorePanel />
+              )}
               <LegendPanel />
             </aside>
           </>
