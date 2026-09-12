@@ -96,6 +96,7 @@ class Runtime:
                 "--fingerprint",
                 "--no-cli",
                 "--no-tls",
+                "--allow-loopback-peers",
             ],
         )
         self.proc = subprocess.Popen(
