@@ -85,10 +85,6 @@ export const BrainScene = () => {
       />
       <Probe path={probePath} stepIndex={probeStepIndex} />
 
-      <gridHelper
-        args={[16, 16, '#1e293b', '#111a2f']}
-        position={[0, -3.2, 0]}
-      />
       <OrbitControls
         enablePan={false}
         minDistance={5}

@@ -14,11 +14,11 @@ interface VoxelGridProps {
 
 const opacityFor = (cell: Cell, onPath: boolean, isHighlighted: boolean) => {
   if (cell.type === 'VIM_TARGET') return 0.95
-  if (cell.type === 'ENT') return 0.55
-  if (onPath) return 0.5
-  if (isHighlighted) return 0.5
-  if (CELL_META[cell.type].noGo) return 0.26
-  return 0.14
+  if (cell.type === 'ENT') return 0.8
+  if (onPath) return 0.85
+  if (isHighlighted) return 0.85
+  if (CELL_META[cell.type].noGo) return 0.5
+  return 0.35
 }
 
 export const VoxelGrid = ({
@@ -42,7 +42,7 @@ export const VoxelGrid = ({
         const isEntry = sameCell(cell.position, entry)
         const isTarget = sameCell(cell.position, target)
         const isHovered = hovered ? sameCell(hovered.position, cell.position) : false
-        const size = isTarget ? 0.58 : 0.5
+        const radius = isTarget ? 0.16 : isHovered || onPath ? 0.13 : 0.11
 
         return (
           <group key={key(cell.position)} position={toScenePosition(cell.position)}>
@@ -57,28 +57,32 @@ export const VoxelGrid = ({
                 if (cell.type === 'ENT') onSelectEntry(cell.position)
               }}
             >
-              <boxGeometry args={[size, size, size]} />
+              <sphereGeometry args={[radius, 20, 20]} />
               <meshStandardMaterial
                 color={meta.color}
                 emissive={meta.color}
-                emissiveIntensity={isTarget ? 1.4 : isHovered || onPath ? 0.7 : 0.25}
+                emissiveIntensity={
+                  isTarget ? 1.8 : isHovered || onPath || isEntry ? 1.1 : 0.45
+                }
                 transparent
                 opacity={
-                  isHovered ? 0.8 : opacityFor(cell, onPath, isHighlighted)
+                  isHovered ? 0.95 : opacityFor(cell, onPath, isHighlighted)
                 }
                 roughness={0.35}
                 metalness={0.1}
               />
             </mesh>
-            <mesh>
-              <boxGeometry args={[size, size, size]} />
-              <meshBasicMaterial
-                color={meta.color}
-                wireframe
-                transparent
-                opacity={onPath || isTarget || isEntry ? 0.55 : 0.18}
-              />
-            </mesh>
+            {(onPath || isTarget || isEntry) && (
+              <mesh>
+                <sphereGeometry args={[radius * 1.7, 16, 16]} />
+                <meshBasicMaterial
+                  color={meta.color}
+                  transparent
+                  opacity={isTarget ? 0.28 : 0.16}
+                  depthWrite={false}
+                />
+              </mesh>
+            )}
             {(isTarget || isEntry) && (
               <Html center distanceFactor={9} zIndexRange={[20, 0]}>
                 <div
