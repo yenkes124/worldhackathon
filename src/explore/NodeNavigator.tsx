@@ -6,10 +6,12 @@ import {
   ChevronsDown,
   ChevronsUp,
   Compass,
+  RotateCcw,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { CELL_META } from '../sim/cellMeta'
 import { describeCoord, sameCell } from '../sim/grid'
+import { headingLabel } from './navigation'
 import type { Action, ActionId, Prediction } from '../sim/types'
 import { EXPLORER_TARGET, moveOptions, useExplorer } from './explorerStore'
 
@@ -60,6 +62,7 @@ const TONE_CLASS = {
 
 interface Props {
   onStep: (action: Action) => void
+  onReset: () => void
   busy?: boolean
 }
 
@@ -68,8 +71,10 @@ interface Props {
  * neighbouring node is and why it is or isn't permitted, and the planner's
  * recommended next node.
  */
-export const NodeNavigator = ({ onStep, busy = false }: Props) => {
+export const NodeNavigator = ({ onStep, onReset, busy = false }: Props) => {
   const cell = useExplorer((s) => s.cell)
+  const entry = useExplorer((s) => s.entry)
+  const heading = useExplorer((s) => s.nav.heading)
   const cellType = useExplorer((s) => s.cellType)
   const suggestion = useExplorer((s) => s.suggestion)
   const meta = CELL_META[cellType]
@@ -85,7 +90,9 @@ export const NodeNavigator = ({ onStep, busy = false }: Props) => {
         <div>
           <p className="text-[10px] tracking-wide text-slate-500 uppercase">Current node</p>
           <p className="font-mono text-[14px] text-slate-50">[{cell.join(', ')}]</p>
-          <p className="text-slate-400">{describeCoord(cell)}</p>
+          <p className="text-slate-400">
+            {describeCoord(cell)} · facing {headingLabel(heading)}
+          </p>
         </div>
         <span
           className={`rounded-md border px-2 py-1 text-right ${
@@ -100,6 +107,17 @@ export const NodeNavigator = ({ onStep, busy = false }: Props) => {
           </span>
         </span>
       </div>
+
+      <button
+        type="button"
+        onClick={onReset}
+        disabled={busy}
+        title="Return to the entry node, facing posterior, and clear the visit log"
+        className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-slate-600/60 bg-slate-800/60 px-2 py-1 text-slate-200 hover:bg-slate-700/60 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <RotateCcw className="h-3 w-3" aria-hidden />
+        Reset to entry [{entry.join(', ')}]
+      </button>
 
       <div className="mt-3 grid grid-cols-2 gap-1.5">
         {LAYOUT.flat().map((id) => {

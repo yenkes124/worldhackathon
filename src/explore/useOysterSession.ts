@@ -2,8 +2,14 @@ import { useHappyOyster, useHappyOysterTravelStatus } from '@reactor-models/happ
 import { useCallback, useEffect, useRef } from 'react'
 import { scenePromptFor } from '../sim/reactions'
 import type { Action } from '../sim/types'
-import { useExplorer } from './explorerStore'
-import { CAPACITY_RETRY_DELAYS_MS, STEP_TRAVEL_MS, isCapacityError, sleep } from './useWorldSession'
+import { headingFor, turnBetween, useExplorer } from './explorerStore'
+import {
+  CAPACITY_RETRY_DELAYS_MS,
+  STEP_TRAVEL_MS,
+  isCapacityError,
+  sleep,
+  turnDurationMs,
+} from './useWorldSession'
 
 export const FALLBACK_WORLD_MODEL = 'reactor/happy-oyster-adventure'
 /**
@@ -166,7 +172,10 @@ export const useOysterSession = (fetchJwt: () => Promise<string>) => {
     if (phase !== 'exploring') return
     const held = heldRef.current
     const push = () =>
-      hold({ translation: translationFor(held), rotation: rotationFor(held) }).catch(fail)
+      hold({
+        translation: translationFor(held),
+        rotation: rotationFor(held),
+      }).catch(fail)
     const handle = (event: KeyboardEvent, down: boolean) => {
       if (event.repeat) return
       const k = event.key.length === 1 ? event.key.toLowerCase() : event.key
@@ -222,11 +231,21 @@ export const useOysterSession = (fetchJwt: () => Promise<string>) => {
   const stepTo = useCallback(
     async (action: Action) => {
       if (travellingRef.current || phase !== 'exploring') return
+      const heading = useExplorer.getState().nav.heading
       const prediction = stepNode(action)
       if (!prediction) return
       travellingRef.current = true
+      const target = headingFor(action)
+      const turn = target === undefined ? 0 : turnBetween(heading, target)
       const dz = prediction.action.delta[2]
       try {
+        if (Math.abs(turn) >= 1) {
+          await hold({
+            translation: 'None',
+            rotation: turn > 0 ? 'Mouse_Right' : 'Mouse_Left',
+          })
+          await sleep(turnDurationMs(turn))
+        }
         await hold({
           translation: 'Front',
           rotation: dz > 0 ? 'Mouse_Up' : dz < 0 ? 'Mouse_Down' : 'None',
@@ -239,12 +258,44 @@ export const useOysterSession = (fetchJwt: () => Promise<string>) => {
       } catch (error) {
         fail(error)
       } finally {
-        settle()
+        settle(target ?? heading)
         travellingRef.current = false
       }
     },
     [phase, hold, stepNode, settle, fail],
   )
 
-  return { status: oysterPhase, phase, begin, end, pause, resume, stepTo, endTravelSession }
+  const resetPosition = useCallback(async () => {
+    if (travellingRef.current || phase !== 'exploring') return
+    travellingRef.current = true
+    const turn = turnBetween(useExplorer.getState().nav.heading, 0)
+    resetExplorer()
+    try {
+      if (Math.abs(turn) >= 1) {
+        await hold({
+          translation: 'None',
+          rotation: turn > 0 ? 'Mouse_Right' : 'Mouse_Left',
+        })
+        await sleep(turnDurationMs(turn))
+        await hold({ translation: 'None', rotation: 'None' })
+      }
+    } catch (error) {
+      fail(error)
+    } finally {
+      settle(0)
+      travellingRef.current = false
+    }
+  }, [phase, hold, resetExplorer, fail, settle])
+
+  return {
+    status: oysterPhase,
+    phase,
+    begin,
+    end,
+    pause,
+    resume,
+    stepTo,
+    resetPosition,
+    endTravelSession,
+  }
 }

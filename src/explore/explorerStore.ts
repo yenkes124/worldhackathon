@@ -51,7 +51,7 @@ interface ExplorerState {
   /** Move one node along `action`; returns the transition that was applied, or undefined if it leaves the volume. */
   step: (action: Action) => Prediction | undefined
   /** Re-centre the dead-reckoned position on the current node after a scripted travel. */
-  settle: () => void
+  settle: (heading?: number) => void
   /** Apply one `chunk_complete` event from the world model. */
   onChunk: (chunk: number, activeAction: string) => void
   reset: () => void
@@ -131,12 +131,19 @@ export const useExplorer = create<ExplorerState>((set, get) => ({
     const state = get()
     const prediction = predictTransition(state.cell, action)
     if (!prediction.inBounds || prediction.predictedType === 'OUTSIDE') return undefined
-    const nav: NavState = { ...state.nav, position: prediction.to }
-    set({ ...enterCell(state, nav, prediction.to, state.chunk), lastAction: action.id })
+    const heading = headingFor(action) ?? state.nav.heading
+    const nav: NavState = { position: prediction.to, heading }
+    set({
+      ...enterCell(state, nav, prediction.to, state.chunk),
+      lastAction: action.id,
+    })
     return prediction
   },
 
-  settle: () => set((state) => ({ nav: { ...state.nav, position: state.cell } })),
+  settle: (heading) =>
+    set((state) => ({
+      nav: { position: state.cell, heading: heading ?? state.nav.heading },
+    })),
 
   onChunk: (chunk, activeAction) => {
     const state = get()
@@ -151,6 +158,17 @@ export const useExplorer = create<ExplorerState>((set, get) => ({
 
   reset: () => set({ ...fresh(get().entry), phase: get().phase }),
 }))
+
+/** Compass heading (0 = posterior/+y, 90 = right/+x) a horizontal step faces; undefined for vertical. */
+export const headingFor = (action: Action): number | undefined => {
+  const [dx, dy] = action.delta
+  if (dx === 0 && dy === 0) return undefined
+  return ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360
+}
+
+/** Signed shortest turn from `from` to `to`, in degrees (positive = clockwise/right). */
+export const turnBetween = (from: number, to: number): number =>
+  ((((to - from) % 360) + 540) % 360) - 180
 
 /** The six neighbouring nodes of `cell` with the world model's verdict on each. */
 export const moveOptions = (cell: Vec3): Prediction[] =>

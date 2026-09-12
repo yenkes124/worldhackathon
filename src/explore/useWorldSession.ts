@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { scenePromptFor } from '../sim/reactions'
 import { RIGHT_HAND_TREMOR } from '../sim/scenario'
 import type { Action } from '../sim/types'
-import { useExplorer } from './explorerStore'
+import { headingFor, turnBetween, useExplorer } from './explorerStore'
 import type { Vertical } from './navigation'
 
 export const WORLD_MODEL = 'reactor/lingbot-world-2'
@@ -20,6 +20,9 @@ export const isCapacityError = (message: string) =>
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 /** How long the camera travels through the scenery for one node step. */
 export const STEP_TRAVEL_MS = 1_800
+/** How long a held look input takes to turn the camera a quarter turn. */
+export const TURN_90_MS = 1_200
+export const turnDurationMs = (degrees: number) => (Math.abs(degrees) / 90) * TURN_90_MS
 
 type Payload = Record<string, unknown>
 const asRecord = (value: unknown): Payload =>
@@ -250,25 +253,56 @@ export const useWorldSession = () => {
   const stepTo = useCallback(
     async (action: Action) => {
       if (travellingRef.current || phase !== 'exploring') return
+      const heading = useExplorer.getState().nav.heading
       const prediction = stepNode(action)
       if (!prediction) return
       travellingRef.current = true
+      const target = headingFor(action)
+      const turn = target === undefined ? 0 : turnBetween(heading, target)
+      if (Math.abs(turn) >= 1) {
+        await send('set_look_horizontal', {
+          look_horizontal: turn > 0 ? 'right' : 'left',
+        })
+        await sleep(turnDurationMs(turn))
+        await send('set_look_horizontal', { look_horizontal: 'idle' })
+      }
       const dz = prediction.action.delta[2]
       if (dz !== 0) {
-        await send('set_camera_pose', { camera_pose: dz > 0 ? POSE_UP : POSE_DOWN })
+        await send('set_camera_pose', {
+          camera_pose: dz > 0 ? POSE_UP : POSE_DOWN,
+        })
       }
       await send('set_move_longitudinal', { move_longitudinal: 'forward' })
       await sleep(STEP_TRAVEL_MS)
       await send('set_move_longitudinal', { move_longitudinal: 'idle' })
       if (dz !== 0) await send('set_camera_pose', { camera_pose: [] })
-      settle()
+      settle(target ?? heading)
       travellingRef.current = false
     },
     [phase, send, settle, stepNode],
   )
 
+  // Back to the entry node: the symbolic state restarts and the camera is turned
+  // to face posterior again so later node steps turn from a known heading.
+  const resetPosition = useCallback(async () => {
+    if (travellingRef.current || phase !== 'exploring') return
+    travellingRef.current = true
+    const turn = turnBetween(useExplorer.getState().nav.heading, 0)
+    resetExplorer()
+    if (Math.abs(turn) >= 1) {
+      await send('set_look_horizontal', {
+        look_horizontal: turn > 0 ? 'right' : 'left',
+      })
+      await sleep(turnDurationMs(turn))
+      await send('set_look_horizontal', { look_horizontal: 'idle' })
+    }
+    await send('set_camera_pose', { camera_pose: [] })
+    settle(0)
+    travellingRef.current = false
+  }, [phase, resetExplorer, send, settle])
+
   const pause = useCallback(() => void send('pause'), [send])
   const resume = useCallback(() => void send('resume'), [send])
 
-  return { status, phase, begin, end, pause, resume, stepTo }
+  return { status, phase, begin, end, pause, resume, stepTo, resetPosition }
 }

@@ -68,6 +68,7 @@ interface Session {
   pause: () => void
   resume: () => void
   stepTo: (action: Action) => Promise<void>
+  resetPosition: () => Promise<void>
 }
 
 interface StageProps {
@@ -84,7 +85,7 @@ const startingText = (phase: ExplorerPhase, status: string, engine: WorldEngine,
       : 'Seeding the world: image, region prompt, seed 20240917…'
 
 const Stage = ({ session, modelName, video }: StageProps) => {
-  const { status, phase, begin, end, pause, resume, stepTo } = session
+  const { status, phase, begin, end, pause, resume, stepTo, resetPosition } = session
   const error = useExplorer((s) => s.error)
   const chunk = useExplorer((s) => s.chunk)
   const lastAction = useExplorer((s) => s.lastAction)
@@ -132,6 +133,11 @@ const Stage = ({ session, modelName, video }: StageProps) => {
   const step = (action: Action) => {
     setTravelling(true)
     void stepTo(action).finally(() => setTravelling(false))
+  }
+
+  const resetToEntry = () => {
+    setTravelling(true)
+    void resetPosition().finally(() => setTravelling(false))
   }
 
   return (
@@ -269,7 +275,11 @@ const Stage = ({ session, modelName, video }: StageProps) => {
       {interior && (
         <>
           <div className="absolute bottom-3 left-4">
-            <NodeNavigator onStep={step} busy={travelling || phase !== 'exploring'} />
+            <NodeNavigator
+              onStep={step}
+              onReset={resetToEntry}
+              busy={travelling || phase !== 'exploring'}
+            />
           </div>
           <div className="pointer-events-none absolute top-3 left-4 flex flex-wrap gap-1.5">
             <button
