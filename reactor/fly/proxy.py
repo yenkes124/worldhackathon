@@ -17,6 +17,9 @@ PUBLIC_TURN_URIS = [
 ]
 
 
+CORS_HEADERS = {"Access-Control-Allow-Origin": "*"}
+
+
 def _rewrite_ice_payload(payload: dict) -> dict:
     for server in payload.get("ice_servers", []):
         rewritten: list[str] = []
@@ -66,14 +69,14 @@ async def _proxy_ice_servers(request: web.Request) -> web.Response:
                 }
             ]
         }
-        return web.json_response(payload)
+        return web.json_response(payload, headers=CORS_HEADERS)
 
     target = f"http://127.0.0.1:{RUNTIME_PORT}{request.rel_url}"
     async with request.app["client"].get(target, headers=dict(request.headers)) as response:
         payload = await response.json()
         if response.status >= 400:
-            return web.json_response(payload, status=response.status)
-    return web.json_response(_rewrite_ice_payload(payload))
+            return web.json_response(payload, status=response.status, headers=CORS_HEADERS)
+    return web.json_response(_rewrite_ice_payload(payload), headers=CORS_HEADERS)
 
 
 async def _proxy_websocket(request: web.Request) -> web.WebSocketResponse:
