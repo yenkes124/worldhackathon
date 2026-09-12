@@ -8,13 +8,7 @@ import type { CellType, PlanResult, Vec3 } from '../sim/types'
 import { actionForStep } from '../sim/worldModel'
 import { advance, cellOf, initialNav, type NavState, type Vertical } from './navigation'
 
-export type ExplorerPhase =
-  | 'idle'
-  | 'connecting'
-  | 'seeding'
-  | 'exploring'
-  | 'paused'
-  | 'error'
+export type ExplorerPhase = 'idle' | 'connecting' | 'seeding' | 'exploring' | 'paused' | 'error'
 
 /** Which hosted Reactor world model renders the scenery. */
 export type WorldEngine = 'lingbot' | 'happyoyster'
@@ -31,6 +25,8 @@ interface ExplorerState {
   engine: WorldEngine
   /** Set when the engine was switched automatically after a capacity failure. */
   fallbackReason: string | undefined
+  /** ENT cell the dive starts from; chosen on the exterior brain view. */
+  entry: Vec3
   nav: NavState
   vertical: Vertical
   cell: Vec3
@@ -47,6 +43,7 @@ interface ExplorerState {
   lastAction: string
   setPhase: (phase: ExplorerPhase, error?: string) => void
   setEngine: (engine: WorldEngine, fallbackReason?: string) => void
+  setEntry: (entry: Vec3) => void
   setVertical: (vertical: Vertical) => void
   /** Apply one `chunk_complete` event from the world model. */
   onChunk: (chunk: number, activeAction: string) => void
@@ -70,13 +67,14 @@ const suggest = (cell: Vec3) => {
   }
 }
 
-const fresh = () => {
-  const nav = initialNav(ENTRY)
+const fresh = (entry: Vec3 = ENTRY) => {
+  const nav = initialNav(entry)
   const cell = cellOf(nav.position)
   const cellType = cellTypeAt(cell)
   return {
     phase: 'idle' as ExplorerPhase,
     error: undefined,
+    entry,
     nav,
     vertical: 0 as Vertical,
     cell,
@@ -99,6 +97,7 @@ export const useExplorer = create<ExplorerState>((set, get) => ({
 
   setPhase: (phase, error) => set({ phase, error }),
   setEngine: (engine, fallbackReason) => set({ engine, fallbackReason }),
+  setEntry: (entry) => set({ ...fresh(entry), phase: get().phase }),
   setVertical: (vertical) => set({ vertical }),
 
   onChunk: (chunk, activeAction) => {
@@ -126,7 +125,7 @@ export const useExplorer = create<ExplorerState>((set, get) => ({
     })
   },
 
-  reset: () => set({ ...fresh(), phase: get().phase }),
+  reset: () => set({ ...fresh(get().entry), phase: get().phase }),
 }))
 
 export const EXPLORER_ENTRY = ENTRY

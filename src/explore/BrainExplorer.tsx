@@ -1,7 +1,9 @@
 import { HappyOysterProvider, HappyOysterVideo } from '@reactor-models/happy-oyster/react'
 import { ReactorProvider, ReactorView } from '@reactor-team/js-sdk'
-import { Loader2, Pause, Play, Power, Sparkles } from 'lucide-react'
+import { Loader2, Pause, Play, Power } from 'lucide-react'
 import { useEffect, useRef, type ReactNode } from 'react'
+import { sameCell } from '../sim/grid'
+import { BrainEntryScene } from './BrainEntryScene'
 import { useExplorer, type ExplorerPhase, type WorldEngine } from './explorerStore'
 import { FALLBACK_WORLD_MODEL, useOysterSession } from './useOysterSession'
 import { WORLD_MODEL, useWorldSession } from './useWorldSession'
@@ -23,7 +25,9 @@ const mintJwt = async (): Promise<string> => {
   }
   if (!res.ok || !body.jwt) {
     throw new Error(
-      typeof body.detail === 'string' ? body.detail : body.error ?? `token exchange failed (${res.status})`,
+      typeof body.detail === 'string'
+        ? body.detail
+        : (body.error ?? `token exchange failed (${res.status})`),
     )
   }
   const expiresAtMs = body.expires_at ? body.expires_at * 1000 : Date.now() + 55 * 60_000
@@ -77,11 +81,34 @@ const Stage = ({ session, modelName, video }: StageProps) => {
   const engine = useExplorer((s) => s.engine)
   const fallbackReason = useExplorer((s) => s.fallbackReason)
   const setEngine = useExplorer((s) => s.setEngine)
+  const entry = useExplorer((s) => s.entry)
+  const setEntry = useExplorer((s) => s.setEntry)
   const live = phase === 'exploring' || phase === 'paused'
+  const starting = phase === 'connecting' || phase === 'seeding'
+
+  const selectEntry = (cell: typeof entry) => {
+    if (starting) return
+    if (sameCell(cell, entry)) {
+      void begin()
+      return
+    }
+    setEntry(cell)
+  }
 
   return (
     <div className="relative h-full w-full bg-black">
-      {video}
+      {/* Exterior brain stays mounted through the dive so the camera can fly in; the
+          stream fades over it once frames arrive. */}
+      {!live && (
+        <div className="absolute inset-0">
+          <BrainEntryScene selected={entry} diving={starting} onSelect={selectEntry} />
+        </div>
+      )}
+      <div
+        className={`absolute inset-0 transition-opacity duration-700 ${live ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+      >
+        {video}
+      </div>
 
       {fallbackReason && (
         <div className="pointer-events-none absolute top-3 right-3 z-10 max-w-xs rounded-md border border-amber-400/40 bg-slate-950/80 px-2.5 py-1.5 text-[10.5px] text-amber-100">
@@ -89,74 +116,77 @@ const Stage = ({ session, modelName, video }: StageProps) => {
         </div>
       )}
 
-      {!live && (
-        <div className="absolute inset-0 flex items-center justify-center bg-[rgba(3,5,12,0.82)] p-6">
-          <div className="glass max-w-md rounded-2xl p-6 text-center">
-            {phase === 'idle' || phase === 'error' ? (
-              <>
-                <Sparkles className="mx-auto h-6 w-6 text-sky-300" aria-hidden />
-                <h2 className="mt-3 text-[15px] font-semibold text-slate-50">
-                  Generate the brain world
-                </h2>
-                <p className="mt-2 text-[12px] leading-relaxed text-slate-400">
-                  Reactor’s hosted world model (<span className="font-mono">{modelName}</span>)
-                  turns a stylised seed image into a navigable, streamed 3D scene. It is
-                  imaginative scenery — not anatomy. Your movement is tracked on the
-                  4×4×4 symbolic grid, which decides how the synthetic body reacts.
+      {(phase === 'idle' || phase === 'error') && (
+        <>
+          <div className="pointer-events-none absolute top-3 left-4 max-w-sm">
+            <h2 className="text-[15px] font-semibold text-slate-50">Choose an entry point</h2>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+              Drag to orbit. Click a cyan spot on the superior surface, then dive in: Reactor’s
+              hosted world model (<span className="font-mono">{modelName}</span>) renders the
+              interior as you move, tracked on the 4×4×4 symbolic grid. Regions are an invented
+              mapping — not anatomy.
+            </p>
+          </div>
+          <div className="absolute bottom-3 left-4 right-3 flex flex-wrap items-end justify-between gap-3">
+            <div className="glass max-w-sm rounded-xl p-3">
+              <p className="text-[10.5px] tracking-wide text-slate-500 uppercase">Selected entry</p>
+              <p className="font-mono text-[13px] text-cyan-200">[{entry.join(', ')}]</p>
+              {phase === 'error' && (
+                <p className="mt-2 rounded-lg border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-left text-[11px] text-rose-100">
+                  {error}
                 </p>
-                {phase === 'error' && (
-                  <p className="mt-3 rounded-lg border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-left text-[11.5px] text-rose-100">
-                    {error}
-                  </p>
-                )}
-                <div className="mt-4 flex justify-center gap-1 rounded-lg border border-slate-700/60 bg-slate-950/60 p-1">
-                  {ENGINES.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => setEngine(option.id)}
-                      className={`flex-1 rounded-md px-2 py-1 text-[11px] transition ${
-                        engine === option.id
-                          ? 'bg-sky-500/20 text-sky-100'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void begin()}
-                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-sky-500/90 px-4 py-2.5 text-[13px] font-semibold text-slate-950 transition hover:bg-sky-400"
-                >
-                  <Play className="h-4 w-4" aria-hidden />
-                  {phase === 'error' ? 'Try again' : 'Start a hosted session'}
-                </button>
-                <p className="mt-3 text-[10.5px] text-slate-500">
-                  Uses your Reactor account’s usage-billed session time while streaming.
-                </p>
-              </>
-            ) : (
-              <>
-                <Loader2 className="mx-auto h-6 w-6 animate-spin text-sky-300" aria-hidden />
-                <p className="mt-3 text-[13px] text-slate-200">
-                  {phase === 'connecting'
-                    ? (error ?? `Connecting to Reactor (${status})…`)
-                    : engine === 'happyoyster'
-                      ? 'Building the world from the seed image and region prompt (can take a minute)…'
-                      : 'Seeding the world: image, region prompt, seed 20240917…'}
-                </p>
-                {phase === 'connecting' && error && (
+              )}
+              <div className="mt-2 flex gap-1 rounded-lg border border-slate-700/60 bg-slate-950/60 p-1">
+                {ENGINES.map((option) => (
                   <button
+                    key={option.id}
                     type="button"
-                    onClick={() => void end()}
-                    className="mt-4 rounded-lg border border-slate-700/60 px-3 py-1.5 text-[11px] text-slate-300 transition hover:border-sky-400/40"
+                    onClick={() => setEngine(option.id)}
+                    className={`flex-1 rounded-md px-2 py-1 text-[11px] transition ${
+                      engine === option.id
+                        ? 'bg-sky-500/20 text-sky-100'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
                   >
-                    Cancel
+                    {option.label}
                   </button>
-                )}
-              </>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => void begin()}
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-sky-500/90 px-4 py-2.5 text-[13px] font-semibold text-slate-950 transition hover:bg-sky-400"
+              >
+                <Play className="h-4 w-4" aria-hidden />
+                {phase === 'error' ? 'Try again' : 'Dive in at the selected entry'}
+              </button>
+              <p className="mt-2 text-[10px] text-slate-500">
+                Uses your Reactor account’s usage-billed session time while streaming.
+              </p>
+            </div>
+          </div>
+        </>
+      )}
+
+      {starting && (
+        <div className="pointer-events-none absolute inset-0 flex items-end justify-center p-6">
+          <div className="glass pointer-events-auto max-w-md rounded-2xl p-5 text-center">
+            <Loader2 className="mx-auto h-6 w-6 animate-spin text-sky-300" aria-hidden />
+            <p className="mt-3 text-[13px] text-slate-200">
+              {phase === 'connecting'
+                ? (error ?? `Connecting to Reactor (${status})…`)
+                : engine === 'happyoyster'
+                  ? 'Building the world from the seed image and region prompt (can take a minute)…'
+                  : 'Seeding the world: image, region prompt, seed 20240917…'}
+            </p>
+            {phase === 'connecting' && error && (
+              <button
+                type="button"
+                onClick={() => void end()}
+                className="mt-4 rounded-lg border border-slate-700/60 px-3 py-1.5 text-[11px] text-slate-300 transition hover:border-sky-400/40"
+              >
+                Cancel
+              </button>
             )}
           </div>
         </div>
@@ -200,8 +230,8 @@ const Stage = ({ session, modelName, video }: StageProps) => {
             </button>
           </div>
           <div className="pointer-events-none absolute bottom-3 left-4 max-w-sm rounded-md border border-amber-400/30 bg-slate-950/70 px-2.5 py-1.5 text-[10.5px] text-amber-100/90">
-            Generated scenery is fictional and non-repeatable in detail. The body response
-            comes from the symbolic grid, not from what you see.
+            Generated scenery is fictional and non-repeatable in detail. The body response comes
+            from the symbolic grid, not from what you see.
           </div>
         </>
       )}
@@ -235,9 +265,7 @@ const OysterStage = () => {
     <Stage
       session={session}
       modelName={FALLBACK_WORLD_MODEL}
-      video={
-        <HappyOysterVideo autoPlay muted playsInline className="h-full w-full object-cover" />
-      }
+      video={<HappyOysterVideo autoPlay muted playsInline className="h-full w-full object-cover" />}
     />
   )
 }
