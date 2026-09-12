@@ -23,8 +23,8 @@ const App = () => {
   }, [isRunning, tick])
 
   return (
-    <div className="relative flex h-full min-h-screen flex-col bg-navy-950">
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-800/60 px-5 py-3">
+    <div className="relative flex h-screen flex-col overflow-hidden bg-navy-950">
+      <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-800/60 px-5 py-3">
         <span className="grid h-8 w-8 place-items-center rounded-lg bg-sky-400/15 text-sky-300">
           <Brain className="h-4 w-4" aria-hidden />
         </span>
@@ -48,11 +48,11 @@ const App = () => {
         </a>
       </header>
 
-      <div className="sticky top-0 z-30 bg-navy-950/95 px-5 pt-3 pb-1 backdrop-blur">
+      <div className="shrink-0 px-5 pt-3">
         <SafetyBanner />
       </div>
 
-      <main className="grid flex-1 gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <main className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:overflow-hidden">
         <div className="glass relative min-h-[420px] overflow-hidden rounded-2xl lg:min-h-0">
           <BrainScene />
           <div className="pointer-events-none absolute bottom-3 left-4 text-[10.5px] text-slate-500">
@@ -61,7 +61,7 @@ const App = () => {
           </div>
         </div>
 
-        <aside className="panel-scroll flex max-h-[calc(100vh-9rem)] flex-col gap-4 overflow-y-auto pr-1 lg:max-h-[calc(100vh-9.5rem)]">
+        <aside className="panel-scroll flex flex-col gap-4 pr-1 lg:min-h-0 lg:overflow-y-auto">
           <PredictionPanel />
           <ControlPanel />
           <MetricsPanel />
