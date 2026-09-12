@@ -4,8 +4,8 @@ import { cellTypeAt, key, manhattan, sameCell } from '../sim/grid'
 import { planAStar } from '../sim/planner'
 import { bodyReaction, type BodyReaction } from '../sim/reactions'
 import { RIGHT_HAND_TREMOR } from '../sim/scenario'
-import type { CellType, PlanResult, Vec3 } from '../sim/types'
-import { actionForStep } from '../sim/worldModel'
+import type { Action, CellType, PlanResult, Prediction, Vec3 } from '../sim/types'
+import { ACTIONS, actionForStep, predictTransition } from '../sim/worldModel'
 import { advance, cellOf, initialNav, type NavState, type Vertical } from './navigation'
 
 export type ExplorerPhase = 'idle' | 'connecting' | 'seeding' | 'exploring' | 'paused' | 'error'
@@ -27,6 +27,8 @@ interface ExplorerState {
   fallbackReason: string | undefined
   /** ENT cell the dive starts from; chosen on the exterior brain view. */
   entry: Vec3
+  /** True once the user has left the exterior view for the interior stream. */
+  dived: boolean
   nav: NavState
   vertical: Vertical
   cell: Vec3
@@ -44,7 +46,12 @@ interface ExplorerState {
   setPhase: (phase: ExplorerPhase, error?: string) => void
   setEngine: (engine: WorldEngine, fallbackReason?: string) => void
   setEntry: (entry: Vec3) => void
+  setDived: (dived: boolean) => void
   setVertical: (vertical: Vertical) => void
+  /** Move one node along `action`; returns the transition that was applied, or undefined if it leaves the volume. */
+  step: (action: Action) => Prediction | undefined
+  /** Re-centre the dead-reckoned position on the current node after a scripted travel. */
+  settle: () => void
   /** Apply one `chunk_complete` event from the world model. */
   onChunk: (chunk: number, activeAction: string) => void
   reset: () => void
@@ -90,15 +97,46 @@ const fresh = (entry: Vec3 = ENTRY) => {
   }
 }
 
+/** State delta for arriving in `cell` (a different cell from the current one). */
+const enterCell = (state: ExplorerState, nav: NavState, cell: Vec3, chunk: number) => {
+  const cellType = cellTypeAt(cell)
+  const meta = CELL_META[cellType]
+  return {
+    nav,
+    chunk,
+    cell,
+    cellType,
+    reaction: bodyReaction(cellType),
+    ...suggest(cell),
+    visited: [...state.visited, { cell, type: cellType, chunk }],
+    noGoEntries: state.noGoEntries + (meta.noGo ? 1 : 0),
+    accumulatedRisk: state.accumulatedRisk + meta.risk,
+    reachedTarget: state.reachedTarget || sameCell(cell, TARGET),
+  }
+}
+
 export const useExplorer = create<ExplorerState>((set, get) => ({
   ...fresh(),
   engine: 'lingbot',
   fallbackReason: undefined,
+  dived: false,
 
   setPhase: (phase, error) => set({ phase, error }),
   setEngine: (engine, fallbackReason) => set({ engine, fallbackReason }),
   setEntry: (entry) => set({ ...fresh(entry), phase: get().phase }),
+  setDived: (dived) => set({ dived }),
   setVertical: (vertical) => set({ vertical }),
+
+  step: (action) => {
+    const state = get()
+    const prediction = predictTransition(state.cell, action)
+    if (!prediction.inBounds || prediction.predictedType === 'OUTSIDE') return undefined
+    const nav: NavState = { ...state.nav, position: prediction.to }
+    set({ ...enterCell(state, nav, prediction.to, state.chunk), lastAction: action.id })
+    return prediction
+  },
+
+  settle: () => set((state) => ({ nav: { ...state.nav, position: state.cell } })),
 
   onChunk: (chunk, activeAction) => {
     const state = get()
@@ -108,25 +146,15 @@ export const useExplorer = create<ExplorerState>((set, get) => ({
       set({ nav, chunk, lastAction: activeAction })
       return
     }
-    const cellType = cellTypeAt(cell)
-    const meta = CELL_META[cellType]
-    set({
-      nav,
-      chunk,
-      lastAction: activeAction,
-      cell,
-      cellType,
-      reaction: bodyReaction(cellType),
-      ...suggest(cell),
-      visited: [...state.visited, { cell, type: cellType, chunk }],
-      noGoEntries: state.noGoEntries + (meta.noGo ? 1 : 0),
-      accumulatedRisk: state.accumulatedRisk + meta.risk,
-      reachedTarget: state.reachedTarget || sameCell(cell, TARGET),
-    })
+    set({ ...enterCell(state, nav, cell, chunk), lastAction: activeAction })
   },
 
   reset: () => set({ ...fresh(get().entry), phase: get().phase }),
 }))
+
+/** The six neighbouring nodes of `cell` with the world model's verdict on each. */
+export const moveOptions = (cell: Vec3): Prediction[] =>
+  ACTIONS.map((action) => predictTransition(cell, action))
 
 export const EXPLORER_ENTRY = ENTRY
 export const EXPLORER_TARGET = TARGET

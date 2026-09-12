@@ -2,6 +2,7 @@ import { useReactor, useReactorMessage } from '@reactor-team/js-sdk'
 import { useCallback, useEffect, useRef } from 'react'
 import { scenePromptFor } from '../sim/reactions'
 import { RIGHT_HAND_TREMOR } from '../sim/scenario'
+import type { Action } from '../sim/types'
 import { useExplorer } from './explorerStore'
 import type { Vertical } from './navigation'
 
@@ -17,6 +18,8 @@ export const CAPACITY_RETRY_DELAYS_MS = [5_000, 10_000, 15_000]
 export const isCapacityError = (message: string) =>
   /\b429\b/.test(message) || /no available (capacity|servers)/i.test(message)
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+/** How long the camera travels through the scenery for one node step. */
+export const STEP_TRAVEL_MS = 1_800
 
 type Payload = Record<string, unknown>
 const asRecord = (value: unknown): Payload =>
@@ -43,6 +46,8 @@ export const useWorldSession = () => {
   const setEngine = useExplorer((s) => s.setEngine)
   const setVertical = useExplorer((s) => s.setVertical)
   const onChunk = useExplorer((s) => s.onChunk)
+  const stepNode = useExplorer((s) => s.step)
+  const settle = useExplorer((s) => s.settle)
   const resetExplorer = useExplorer((s) => s.reset)
 
   const startedRef = useRef(false)
@@ -200,11 +205,7 @@ export const useWorldSession = () => {
         case 'a':
         case 'd':
           void send('set_move_lateral', {
-            move_lateral: held.has('a')
-              ? 'strafe_left'
-              : held.has('d')
-                ? 'strafe_right'
-                : 'idle',
+            move_lateral: held.has('a') ? 'strafe_left' : held.has('d') ? 'strafe_right' : 'idle',
           })
           break
         case 'ArrowLeft':
@@ -242,8 +243,32 @@ export const useWorldSession = () => {
     }
   }, [phase, send, climb])
 
+  // Discrete node move: the grid jumps to the neighbour immediately; the camera
+  // travels for a moment so the scenery visibly changes, then holds still. The
+  // dead-reckoned drift from that travel stays well inside the new cell.
+  const travellingRef = useRef(false)
+  const stepTo = useCallback(
+    async (action: Action) => {
+      if (travellingRef.current || phase !== 'exploring') return
+      const prediction = stepNode(action)
+      if (!prediction) return
+      travellingRef.current = true
+      const dz = prediction.action.delta[2]
+      if (dz !== 0) {
+        await send('set_camera_pose', { camera_pose: dz > 0 ? POSE_UP : POSE_DOWN })
+      }
+      await send('set_move_longitudinal', { move_longitudinal: 'forward' })
+      await sleep(STEP_TRAVEL_MS)
+      await send('set_move_longitudinal', { move_longitudinal: 'idle' })
+      if (dz !== 0) await send('set_camera_pose', { camera_pose: [] })
+      settle()
+      travellingRef.current = false
+    },
+    [phase, send, settle, stepNode],
+  )
+
   const pause = useCallback(() => void send('pause'), [send])
   const resume = useCallback(() => void send('resume'), [send])
 
-  return { status, phase, begin, end, pause, resume }
+  return { status, phase, begin, end, pause, resume, stepTo }
 }

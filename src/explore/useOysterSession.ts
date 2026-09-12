@@ -1,8 +1,9 @@
 import { useHappyOyster, useHappyOysterTravelStatus } from '@reactor-models/happy-oyster/react'
 import { useCallback, useEffect, useRef } from 'react'
 import { scenePromptFor } from '../sim/reactions'
+import type { Action } from '../sim/types'
 import { useExplorer } from './explorerStore'
-import { CAPACITY_RETRY_DELAYS_MS, isCapacityError, sleep } from './useWorldSession'
+import { CAPACITY_RETRY_DELAYS_MS, STEP_TRAVEL_MS, isCapacityError, sleep } from './useWorldSession'
 
 export const FALLBACK_WORLD_MODEL = 'reactor/happy-oyster-adventure'
 /**
@@ -15,7 +16,9 @@ const PUBLIC_SEED_IMAGE_URL =
 /** HappyOyster has no per-chunk confirmations, so dead-reckon on a fixed tick. */
 const TICK_MS = 500
 
-type Translation = NonNullable<Parameters<ReturnType<typeof useHappyOyster>['hold']>[0]['translation']>
+type Translation = NonNullable<
+  Parameters<ReturnType<typeof useHappyOyster>['hold']>[0]['translation']
+>
 type Rotation = NonNullable<Parameters<ReturnType<typeof useHappyOyster>['hold']>[0]['rotation']>
 
 const translationFor = (held: Set<string>): Translation => {
@@ -70,6 +73,8 @@ export const useOysterSession = (fetchJwt: () => Promise<string>) => {
   const setPhase = useExplorer((s) => s.setPhase)
   const setVertical = useExplorer((s) => s.setVertical)
   const onChunk = useExplorer((s) => s.onChunk)
+  const stepNode = useExplorer((s) => s.step)
+  const settle = useExplorer((s) => s.settle)
   const resetExplorer = useExplorer((s) => s.reset)
 
   const cancelledRef = useRef(false)
@@ -211,5 +216,35 @@ export const useOysterSession = (fetchJwt: () => Promise<string>) => {
   const pause = useCallback(() => setPhase('paused'), [setPhase])
   const resume = useCallback(() => setPhase('exploring'), [setPhase])
 
-  return { status: oysterPhase, phase, begin, end, pause, resume, endTravelSession }
+  // Discrete node move: grid jumps at once; the camera glides forward briefly
+  // (tilting for vertical steps) so the scenery visibly changes.
+  const travellingRef = useRef(false)
+  const stepTo = useCallback(
+    async (action: Action) => {
+      if (travellingRef.current || phase !== 'exploring') return
+      const prediction = stepNode(action)
+      if (!prediction) return
+      travellingRef.current = true
+      const dz = prediction.action.delta[2]
+      try {
+        await hold({
+          translation: 'Front',
+          rotation: dz > 0 ? 'Mouse_Up' : dz < 0 ? 'Mouse_Down' : 'None',
+        })
+        await sleep(STEP_TRAVEL_MS)
+        await hold({
+          translation: translationFor(heldRef.current),
+          rotation: rotationFor(heldRef.current),
+        })
+      } catch (error) {
+        fail(error)
+      } finally {
+        settle()
+        travellingRef.current = false
+      }
+    },
+    [phase, hold, stepNode, settle, fail],
+  )
+
+  return { status: oysterPhase, phase, begin, end, pause, resume, stepTo, endTravelSession }
 }
