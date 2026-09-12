@@ -169,13 +169,14 @@ container's ICE candidates directly. Provide TURN credentials via the
 public free relays proved unreliable. Any container host with a public UDP
 port (Fly.io, a VM) avoids the TURN requirement entirely.
 
-**Self-hosting on Fly.io (direct UDP, no TURN).** `reactor/fly/` contains a
-standalone Dockerfile and `fly.toml` for the Runtime with HTTP on port 8080
-and a `50000:50019` UDP service range for WebRTC. Fly requires a dedicated
-IPv4 for public UDP and normally requires UDP sockets to bind to
-`fly-global-services`; the current Runtime binds `0.0.0.0`, so verify that
-binding before deployment. STUN is configured to advertise Fly's public
-server-reflexive candidate, avoiding a TURN relay.
+**Self-hosting on Fly.io (verified).** `reactor/fly/` runs coturn beside the
+Runtime. The Runtime uses TURN over loopback on private port 3478, while the
+entrypoint binds coturn to Fly's `fly-global-services` address and maps its
+50000–50019 relay range through Fly UDP services. An HTTP/WebSocket proxy on
+8080 rewrites `/ice_servers` to the dedicated public IPv4 and exposes both
+TURN/UDP and TURN/TCP. `https://neurogrid-reactor.fly.dev/` passed the Python
+SDK smoke test with **61 frames** of shape `(600, 960, 3)` and 12 messages.
+Fly requires a dedicated IPv4 for public UDP.
 
 ## 6. Closest alternative if Reactor is not wanted
 

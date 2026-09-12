@@ -1,9 +1,9 @@
 # Fly.io Runtime host
 
-This directory prepares the NeuroGrid Reactor Runtime for Fly.io. Fly's
-public UDP service provides the direct WebRTC media path, so this deployment
-does not use TURN. The app name in `fly.toml` is a placeholder and can be
-changed before launch.
+This directory hosts the NeuroGrid Reactor Runtime on Fly.io with an
+in-container coturn relay. The Runtime uses TURN over loopback; the public
+HTTP proxy rewrites its ICE response to the dedicated Fly IPv4. The app name
+in `fly.toml` is a placeholder and can be changed before launch.
 
 Run these commands from the repository root after setting a token:
 
@@ -18,11 +18,12 @@ fly logs -a neurogrid-reactor
 
 `fly ips allocate-v4` is required because Fly does not support public UDP
 through a shared IPv4 address or public IPv6. A dedicated IPv4 is billed
-monthly. Fly's UDP forwarding also requires the UDP socket to bind to
-`fly-global-services`, not generally `0.0.0.0`; the Runtime currently binds
-its WebRTC sockets through its normal `0.0.0.0` configuration, so this must be
-confirmed or adjusted before relying on public UDP media.
+monthly. The entrypoint resolves `fly-global-services`, starts coturn on that
+address and loopback, and generates a per-boot credential. Fly exposes UDP
+3478 for TURN and UDP 50000–50019 for coturn relay traffic; TCP 3478 is also
+exposed for clients that need TURN/TCP. The Runtime itself uses relay ports
+40000–40019 internally and is proxied from port 8080.
 
-The UDP service maps the `50000:50019` range without handlers. Fly preserves
-the UDP destination port, and the Runtime advertises the public server-
-reflexive candidate learned through STUN. The HTTP API remains on port 8080.
+The deployed endpoint is
+`https://neurogrid-reactor.fly.dev/`. The Python SDK smoke test is verified
+there with 61 frames of shape `(600, 960, 3)` and 12 messages.
