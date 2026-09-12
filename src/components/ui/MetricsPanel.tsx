@@ -30,7 +30,7 @@ const Stat = ({
 
 export const MetricsPanel = () => {
   const plan = useSimulation((state) => state.plan)
-  const mode = useSimulation((state) => state.mode)
+  const planningMode = useSimulation((state) => state.planningMode)
   const stepIndex = useSimulation((state) => state.stepIndex)
   const metrics = useSimulation(selectMetrics)
   const learner = plan as LearnerResult
@@ -58,7 +58,7 @@ export const MetricsPanel = () => {
         show how far the probe has travelled along it.
       </p>
       <p className="mt-2.5 text-[11px] text-slate-500">
-        {mode === 'astar'
+        {planningMode === 'astar'
           ? `A* expanded ${plan.expanded} cells under hard no-go constraints.`
           : `Learner ran ${learner.episodes ?? 0} seeded episodes and kept the best safe trajectory.`}
       </p>

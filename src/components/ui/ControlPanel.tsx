@@ -24,14 +24,14 @@ const buttonBase =
 export const ControlPanel = () => {
   const scenario = useSimulation((state) => state.scenario)
   const entry = useSimulation((state) => state.entry)
-  const mode = useSimulation((state) => state.mode)
+  const planningMode = useSimulation((state) => state.planningMode)
   const plan = useSimulation((state) => state.plan)
   const stepIndex = useSimulation((state) => state.stepIndex)
   const isRunning = useSimulation((state) => state.isRunning)
   const showFailed = useSimulation((state) => state.showFailed)
   const failureReason = useSimulation((state) => state.failureReason)
   const setEntry = useSimulation((state) => state.setEntry)
-  const setMode = useSimulation((state) => state.setMode)
+  const setPlanningMode = useSimulation((state) => state.setPlanningMode)
   const run = useSimulation((state) => state.run)
   const pause = useSimulation((state) => state.pause)
   const reset = useSimulation((state) => state.reset)
@@ -137,9 +137,9 @@ export const ControlPanel = () => {
             <button
               key={option.id}
               type="button"
-              onClick={() => setMode(option.id)}
+              onClick={() => setPlanningMode(option.id)}
               className={`rounded-lg border px-3 py-2 text-left transition ${
-                mode === option.id
+                planningMode === option.id
                   ? 'border-purple-400/60 bg-purple-400/10 text-purple-100'
                   : 'border-slate-700/50 bg-slate-900/40 text-slate-300 hover:border-purple-400/30'
               }`}

@@ -2,9 +2,11 @@ import { Brain, Code2 } from 'lucide-react'
 import { useEffect } from 'react'
 import { BrainScene } from './components/scene/BrainScene'
 import { ControlPanel } from './components/ui/ControlPanel'
+import { ExplorePanel } from './components/ui/ExplorePanel'
 import { IntroOverlay } from './components/ui/IntroOverlay'
 import { LegendPanel } from './components/ui/LegendPanel'
 import { MetricsPanel } from './components/ui/MetricsPanel'
+import { ModeSelector } from './components/ui/ModeSelector'
 import { PredictionPanel } from './components/ui/PredictionPanel'
 import { SafetyBanner } from './components/ui/SafetyBanner'
 import { useSimulation } from './state/simulationStore'
@@ -13,6 +15,7 @@ const STEP_INTERVAL_MS = 900
 
 const App = () => {
   const hasStarted = useSimulation((state) => state.hasStarted)
+  const mode = useSimulation((state) => state.mode)
   const isRunning = useSimulation((state) => state.isRunning)
   const tick = useSimulation((state) => state.tick)
 
@@ -62,9 +65,16 @@ const App = () => {
         </div>
 
         <aside className="panel-scroll flex flex-col gap-4 pr-1 lg:min-h-0 lg:overflow-y-auto">
-          <PredictionPanel />
-          <ControlPanel />
-          <MetricsPanel />
+          <ModeSelector />
+          {mode === 'guided' ? (
+            <>
+              <PredictionPanel />
+              <ControlPanel />
+              <MetricsPanel />
+            </>
+          ) : (
+            <ExplorePanel />
+          )}
           <LegendPanel />
         </aside>
       </main>
