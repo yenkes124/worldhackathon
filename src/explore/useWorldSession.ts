@@ -13,10 +13,10 @@ const POSE_UP = [0, 0, 0, 0, -1, 0]
 const POSE_DOWN = [0, 0, 0, 0, 1, 0]
 
 /** Reactor answers 429 "no available capacity" when every hosted GPU is busy. */
-const CAPACITY_RETRY_DELAYS_MS = [5_000, 10_000, 15_000, 20_000, 30_000, 30_000]
-const isCapacityError = (message: string) =>
+export const CAPACITY_RETRY_DELAYS_MS = [5_000, 10_000, 15_000]
+export const isCapacityError = (message: string) =>
   /\b429\b/.test(message) || /no available (capacity|servers)/i.test(message)
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 type Payload = Record<string, unknown>
 const asRecord = (value: unknown): Payload =>
@@ -40,6 +40,7 @@ export const useWorldSession = () => {
   const phase = useExplorer((s) => s.phase)
   const cellType = useExplorer((s) => s.cellType)
   const setPhase = useExplorer((s) => s.setPhase)
+  const setEngine = useExplorer((s) => s.setEngine)
   const setVertical = useExplorer((s) => s.setVertical)
   const onChunk = useExplorer((s) => s.onChunk)
   const resetExplorer = useExplorer((s) => s.reset)
@@ -71,8 +72,18 @@ export const useWorldSession = () => {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         const delay = CAPACITY_RETRY_DELAYS_MS[attempt]
-        if (!isCapacityError(message) || delay === undefined || cancelledRef.current) {
+        if (cancelledRef.current) return
+        if (!isCapacityError(message)) {
           setPhase('error', message)
+          return
+        }
+        if (delay === undefined) {
+          // Primary model is saturated: hand over to the fallback world model,
+          // which mounts its own provider and starts immediately.
+          setEngine(
+            'happyoyster',
+            `${WORLD_MODEL} had no free capacity after ${CAPACITY_RETRY_DELAYS_MS.length + 1} attempts`,
+          )
           return
         }
         retryingRef.current = true
@@ -86,7 +97,7 @@ export const useWorldSession = () => {
         setPhase('connecting')
       }
     }
-  }, [connect, resetExplorer, setPhase])
+  }, [connect, resetExplorer, setEngine, setPhase])
 
   const end = useCallback(async () => {
     cancelledRef.current = true

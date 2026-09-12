@@ -16,6 +16,9 @@ export type ExplorerPhase =
   | 'paused'
   | 'error'
 
+/** Which hosted Reactor world model renders the scenery. */
+export type WorldEngine = 'lingbot' | 'happyoyster'
+
 export interface VisitLog {
   cell: Vec3
   type: CellType
@@ -25,6 +28,9 @@ export interface VisitLog {
 interface ExplorerState {
   phase: ExplorerPhase
   error: string | undefined
+  engine: WorldEngine
+  /** Set when the engine was switched automatically after a capacity failure. */
+  fallbackReason: string | undefined
   nav: NavState
   vertical: Vertical
   cell: Vec3
@@ -40,6 +46,7 @@ interface ExplorerState {
   chunk: number
   lastAction: string
   setPhase: (phase: ExplorerPhase, error?: string) => void
+  setEngine: (engine: WorldEngine, fallbackReason?: string) => void
   setVertical: (vertical: Vertical) => void
   /** Apply one `chunk_complete` event from the world model. */
   onChunk: (chunk: number, activeAction: string) => void
@@ -87,8 +94,11 @@ const fresh = () => {
 
 export const useExplorer = create<ExplorerState>((set, get) => ({
   ...fresh(),
+  engine: 'lingbot',
+  fallbackReason: undefined,
 
   setPhase: (phase, error) => set({ phase, error }),
+  setEngine: (engine, fallbackReason) => set({ engine, fallbackReason }),
   setVertical: (vertical) => set({ vertical }),
 
   onChunk: (chunk, activeAction) => {

@@ -1,6 +1,9 @@
+import { HappyOysterProvider, HappyOysterVideo } from '@reactor-models/happy-oyster/react'
 import { ReactorProvider, ReactorView } from '@reactor-team/js-sdk'
 import { Loader2, Pause, Play, Power, Sparkles } from 'lucide-react'
-import { useExplorer } from './explorerStore'
+import { useEffect, useRef, type ReactNode } from 'react'
+import { useExplorer, type ExplorerPhase, type WorldEngine } from './explorerStore'
+import { FALLBACK_WORLD_MODEL, useOysterSession } from './useOysterSession'
 import { WORLD_MODEL, useWorldSession } from './useWorldSession'
 
 // A session-scoped token only authorises the sessions *it* created, and the
@@ -46,16 +49,45 @@ const KEYS: [string, string][] = [
   ['Q / E', 'up / down a layer'],
 ]
 
-const Stage = () => {
-  const { status, phase, begin, end, pause, resume } = useWorldSession()
+const ENGINES: { id: WorldEngine; label: string; model: string }[] = [
+  { id: 'lingbot', label: 'LingBot World 2', model: WORLD_MODEL },
+  { id: 'happyoyster', label: 'HappyOyster', model: FALLBACK_WORLD_MODEL },
+]
+
+interface Session {
+  status: string
+  phase: ExplorerPhase
+  begin: () => Promise<void>
+  end: () => Promise<void>
+  pause: () => void
+  resume: () => void
+}
+
+interface StageProps {
+  session: Session
+  modelName: string
+  video: ReactNode
+}
+
+const Stage = ({ session, modelName, video }: StageProps) => {
+  const { status, phase, begin, end, pause, resume } = session
   const error = useExplorer((s) => s.error)
   const chunk = useExplorer((s) => s.chunk)
   const lastAction = useExplorer((s) => s.lastAction)
+  const engine = useExplorer((s) => s.engine)
+  const fallbackReason = useExplorer((s) => s.fallbackReason)
+  const setEngine = useExplorer((s) => s.setEngine)
   const live = phase === 'exploring' || phase === 'paused'
 
   return (
     <div className="relative h-full w-full bg-black">
-      <ReactorView track="main_video" className="h-full w-full" videoObjectFit="cover" />
+      {video}
+
+      {fallbackReason && (
+        <div className="pointer-events-none absolute top-3 right-3 z-10 max-w-xs rounded-md border border-amber-400/40 bg-slate-950/80 px-2.5 py-1.5 text-[10.5px] text-amber-100">
+          Fallback world model: <span className="font-mono">{modelName}</span> — {fallbackReason}.
+        </div>
+      )}
 
       {!live && (
         <div className="absolute inset-0 flex items-center justify-center bg-[rgba(3,5,12,0.82)] p-6">
@@ -67,7 +99,7 @@ const Stage = () => {
                   Generate the brain world
                 </h2>
                 <p className="mt-2 text-[12px] leading-relaxed text-slate-400">
-                  Reactor’s hosted world model (<span className="font-mono">{WORLD_MODEL}</span>)
+                  Reactor’s hosted world model (<span className="font-mono">{modelName}</span>)
                   turns a stylised seed image into a navigable, streamed 3D scene. It is
                   imaginative scenery — not anatomy. Your movement is tracked on the
                   4×4×4 symbolic grid, which decides how the synthetic body reacts.
@@ -77,10 +109,26 @@ const Stage = () => {
                     {error}
                   </p>
                 )}
+                <div className="mt-4 flex justify-center gap-1 rounded-lg border border-slate-700/60 bg-slate-950/60 p-1">
+                  {ENGINES.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setEngine(option.id)}
+                      className={`flex-1 rounded-md px-2 py-1 text-[11px] transition ${
+                        engine === option.id
+                          ? 'bg-sky-500/20 text-sky-100'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
                 <button
                   type="button"
                   onClick={() => void begin()}
-                  className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-sky-500/90 px-4 py-2.5 text-[13px] font-semibold text-slate-950 transition hover:bg-sky-400"
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-sky-500/90 px-4 py-2.5 text-[13px] font-semibold text-slate-950 transition hover:bg-sky-400"
                 >
                   <Play className="h-4 w-4" aria-hidden />
                   {phase === 'error' ? 'Try again' : 'Start a hosted session'}
@@ -95,7 +143,9 @@ const Stage = () => {
                 <p className="mt-3 text-[13px] text-slate-200">
                   {phase === 'connecting'
                     ? (error ?? `Connecting to Reactor (${status})…`)
-                    : 'Seeding the world: image, region prompt, seed 20240917…'}
+                    : engine === 'happyoyster'
+                      ? 'Building the world from the seed image and region prompt (can take a minute)…'
+                      : 'Seeding the world: image, region prompt, seed 20240917…'}
                 </p>
                 {phase === 'connecting' && error && (
                   <button
@@ -159,8 +209,48 @@ const Stage = () => {
   )
 }
 
-export const BrainExplorer = () => (
-  <ReactorProvider modelName={WORLD_MODEL} jwtToken={fetchJwt}>
-    <Stage />
-  </ReactorProvider>
-)
+const LingbotStage = () => {
+  const session = useWorldSession()
+  return (
+    <Stage
+      session={session}
+      modelName={WORLD_MODEL}
+      video={<ReactorView track="main_video" className="h-full w-full" videoObjectFit="cover" />}
+    />
+  )
+}
+
+const OysterStage = () => {
+  const session = useOysterSession(fetchJwt)
+  const fallbackReason = useExplorer((s) => s.fallbackReason)
+  const autoStarted = useRef(false)
+  // Mounted because the primary model was saturated mid-start: carry on
+  // without asking the user to click again.
+  useEffect(() => {
+    if (!fallbackReason || autoStarted.current) return
+    autoStarted.current = true
+    void session.begin()
+  }, [fallbackReason, session])
+  return (
+    <Stage
+      session={session}
+      modelName={FALLBACK_WORLD_MODEL}
+      video={
+        <HappyOysterVideo autoPlay muted playsInline className="h-full w-full object-cover" />
+      }
+    />
+  )
+}
+
+export const BrainExplorer = () => {
+  const engine = useExplorer((s) => s.engine)
+  return engine === 'happyoyster' ? (
+    <HappyOysterProvider key="happyoyster" mode="adventure" jwt={fetchJwt}>
+      <OysterStage />
+    </HappyOysterProvider>
+  ) : (
+    <ReactorProvider key="lingbot" modelName={WORLD_MODEL} jwtToken={fetchJwt}>
+      <LingbotStage />
+    </ReactorProvider>
+  )
+}

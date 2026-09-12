@@ -6,6 +6,8 @@ const TOKENS_URL = 'https://api.reactor.inc/tokens'
 
 /** Hosted Reactor world model the explorer connects to. */
 export const DEFAULT_MODEL = 'reactor/lingbot-world-2'
+/** Model the explorer falls back to when the primary one has no capacity. */
+export const FALLBACK_MODEL = 'reactor/happy-oyster-adventure'
 
 /**
  * @param {import('node:http').IncomingMessage} req
@@ -37,7 +39,10 @@ export async function handleTokenRequest(req, res, options) {
       },
       body: JSON.stringify({
         authorization_details: [
-          { type: 'session', resources: { models: { match: [modelName] } } },
+          {
+            type: 'session',
+            resources: { models: { match: [...new Set([modelName, FALLBACK_MODEL])] } },
+          },
         ],
       }),
     })

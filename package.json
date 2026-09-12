@@ -15,6 +15,7 @@
   "dependencies": {
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
+    "@reactor-models/happy-oyster": "^1.0.0",
     "@reactor-team/js-sdk": "^3.0.2",
     "lucide-react": "^1.45.0",
     "react": "19.2.8",
