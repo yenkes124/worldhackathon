@@ -31,13 +31,14 @@ const Stat = ({
 export const MetricsPanel = () => {
   const plan = useSimulation((state) => state.plan)
   const mode = useSimulation((state) => state.mode)
+  const stepIndex = useSimulation((state) => state.stepIndex)
   const metrics = useSimulation(selectMetrics)
   const learner = plan as LearnerResult
 
   return (
-    <Panel title="Trajectory metrics" icon={Activity}>
+    <Panel title="Planned trajectory metrics" icon={Activity}>
       <div className="grid grid-cols-3 gap-2">
-        <Stat label="Steps" value={String(metrics.steps)} />
+        <Stat label="Steps" value={`${stepIndex} / ${metrics.steps}`} />
         <Stat label="Total risk" value={metrics.totalRisk.toFixed(2)} />
         <Stat label="Peak risk" value={metrics.peakRisk.toFixed(2)} />
         <Stat label="Total reward" value={metrics.totalReward.toFixed(2)} />
@@ -47,11 +48,15 @@ export const MetricsPanel = () => {
           tone={metrics.violations.length === 0 ? 'good' : 'bad'}
         />
         <Stat
-          label="Target"
-          value={metrics.reachesTarget ? 'reached' : 'unreached'}
+          label="Plan hits target"
+          value={metrics.reachesTarget ? 'yes' : 'no'}
           tone={metrics.reachesTarget ? 'good' : 'bad'}
         />
       </div>
+      <p className="mt-2 text-[10.5px] text-slate-500">
+        Risk, reward and target figures describe the whole planned route; steps
+        show how far the probe has travelled along it.
+      </p>
       <p className="mt-2.5 text-[11px] text-slate-500">
         {mode === 'astar'
           ? `A* expanded ${plan.expanded} cells under hard no-go constraints.`

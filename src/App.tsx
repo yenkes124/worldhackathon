@@ -48,7 +48,7 @@ const App = () => {
         </a>
       </header>
 
-      <div className="px-5 pt-3">
+      <div className="sticky top-0 z-30 bg-navy-950/95 px-5 pt-3 pb-1 backdrop-blur">
         <SafetyBanner />
       </div>
 
