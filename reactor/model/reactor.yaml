@@ -1,0 +1,34 @@
+# NeuroGrid on Reactor Runtime. Deploy with:  reactor model deploy
+# Reference: https://docs.reactor.inc/deploy/platform/deploying
+$schema: reactor/v2
+
+model:
+  name: neurogrid
+  version: v0.1.0
+  description: >-
+    Deterministic 4x4x4 voxel world model with a risk-weighted A* planner and a
+    seeded rollout learner, software-rendered to a video track. Synthetic,
+    educational, not medical software.
+  public: false
+
+  # NeuroGrid is pure CPU (NumPy + Pillow), but Reactor hosts every model on a
+  # GPU node, so the smallest accepted type is requested. `reactor gpu ls`.
+  resources:
+    gpu:
+      type: NVIDIA_RTX6000
+      count: 1
+
+runtime:
+  import: model:NeuroGridModel
+  config: config.yaml
+  # No weights: the "model" is a symbolic transition function + planner.
+
+build:
+  runtime_version: "3.2.7"
+  python_requirements: requirements.txt
+  system_packages: [fonts-dejavu-core]
+
+deployment:
+  instances:
+    - region: us-west
+      count: 1

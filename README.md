@@ -209,6 +209,22 @@ npm run lint       # oxlint
 npm run typecheck  # tsc -b
 ```
 
+## Run the generated-brain explorer
+
+The hosted generated-brain explorer keeps the same safety framing: it is an
+educational, fictional demo, not medical software or anatomical guidance.
+
+```bash
+cp .env.example .env   # set REACTOR_API_KEY; keep it server-side
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173`, choose the **Generated brain** tab, and select
+**Start a hosted session**. The **Voxel grid** tab is the original client-side
+view. For production, run `npm run build && npm start`; `server/serve.mjs`
+serves `dist` and `/api/token`.
+
 ## Architecture
 
 ```
@@ -254,3 +270,12 @@ store-driven session that discovers a restriction and still reaches the target.
 - The learner is a seeded heuristic rollout search for demonstration, not a
   trained reinforcement-learning agent.
 - No persistence, no backend, and no notion of a patient or a case.
+
+## Reactor port
+
+`reactor/` contains a rebuild of the same simulation as a custom
+[Reactor](https://docs.reactor.inc) Runtime model (Python port of `src/sim/`
+with parity tests, server-rendered voxel video track, typed commands) plus a
+React client on `@reactor-team/js-sdk`. Model choice, architecture, and the
+limitations of streaming a 3D scene as video are documented in
+[`REACTOR_PORT.md`](./REACTOR_PORT.md).

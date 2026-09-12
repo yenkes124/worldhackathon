@@ -1,25 +1,20 @@
 {
-  "name": "worldhackathon",
+  "name": "neurogrid-reactor-client",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview",
-    "start": "node server/serve.mjs",
-    "test": "vitest run",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "start": "node server/serve.mjs"
   },
   "dependencies": {
-    "@react-three/drei": "^10.7.8",
-    "@react-three/fiber": "^9.7.0",
     "@reactor-team/js-sdk": "^3.0.2",
     "lucide-react": "^1.45.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "three": "^0.186.0",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
@@ -27,13 +22,11 @@
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
-    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^5.1.1",
     "oxlint": "^1.81.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
-    "vite": "^7.1.14",
-    "vitest": "^4.1.11"
+    "vite": "^7.1.14"
   },
   "engines": {
     "node": ">=20.19"

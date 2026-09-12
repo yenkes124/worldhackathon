@@ -16,7 +16,6 @@ const tokenRoute = (env: Record<string, string>): Plugin => ({
   },
 })
 
-// https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   return {

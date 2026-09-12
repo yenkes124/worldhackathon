@@ -1,5 +1,5 @@
-import { Brain, Code2 } from 'lucide-react'
-import { useEffect } from 'react'
+import { Boxes, Brain, Code2, Sparkles } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { BrainScene } from './components/scene/BrainScene'
 import { ControlPanel } from './components/ui/ControlPanel'
 import { ExplorePanel } from './components/ui/ExplorePanel'
@@ -9,15 +9,26 @@ import { MetricsPanel } from './components/ui/MetricsPanel'
 import { ModeSelector } from './components/ui/ModeSelector'
 import { PredictionPanel } from './components/ui/PredictionPanel'
 import { SafetyBanner } from './components/ui/SafetyBanner'
+import { BrainExplorer } from './explore/BrainExplorer'
+import { MiniMap } from './explore/MiniMap'
+import { PlannerHintPanel, ReactionPanel } from './explore/ReactionPanel'
 import { useSimulation } from './state/simulationStore'
 
 const STEP_INTERVAL_MS = 900
+
+type View = 'explore' | 'grid'
+
+const VIEWS: { id: View; label: string; icon: typeof Boxes }[] = [
+  { id: 'explore', label: 'Generated brain', icon: Sparkles },
+  { id: 'grid', label: 'Voxel grid', icon: Boxes },
+]
 
 const App = () => {
   const hasStarted = useSimulation((state) => state.hasStarted)
   const mode = useSimulation((state) => state.mode)
   const isRunning = useSimulation((state) => state.isRunning)
   const tick = useSimulation((state) => state.tick)
+  const [view, setView] = useState<View>('explore')
 
   useEffect(() => {
     if (!isRunning) return
@@ -40,6 +51,29 @@ const App = () => {
             concept
           </p>
         </div>
+        <div
+          role="tablist"
+          aria-label="Visualisation"
+          className="flex rounded-lg border border-slate-700/60 p-0.5"
+        >
+          {VIEWS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={view === id}
+              onClick={() => setView(id)}
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] transition ${
+                view === id
+                  ? 'bg-sky-400/15 text-sky-100'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" aria-hidden />
+              {label}
+            </button>
+          ))}
+        </div>
         <a
           href="https://github.com/yenkes124/worldhackathon"
           target="_blank"
@@ -56,27 +90,42 @@ const App = () => {
       </div>
 
       <main className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:overflow-hidden">
-        <div className="glass relative min-h-[420px] overflow-hidden rounded-2xl lg:min-h-0">
-          <BrainScene />
-          <div className="pointer-events-none absolute bottom-3 left-4 text-[10.5px] text-slate-500">
-            Drag to orbit · scroll to zoom · click a cyan ENT voxel to change
-            entry
-          </div>
-        </div>
-
-        <aside className="panel-scroll flex flex-col gap-4 pr-1 lg:min-h-0 lg:overflow-y-auto">
-          <ModeSelector />
-          {mode === 'guided' ? (
-            <>
-              <PredictionPanel />
-              <ControlPanel />
-              <MetricsPanel />
-            </>
-          ) : (
-            <ExplorePanel />
-          )}
-          <LegendPanel />
-        </aside>
+        {view === 'explore' ? (
+          <>
+            <div className="glass relative min-h-[420px] overflow-hidden rounded-2xl lg:min-h-0">
+              <BrainExplorer />
+            </div>
+            <aside className="panel-scroll flex flex-col gap-4 pr-1 lg:min-h-0 lg:overflow-y-auto">
+              <ReactionPanel />
+              <PlannerHintPanel />
+              <MiniMap />
+              <LegendPanel />
+            </aside>
+          </>
+        ) : (
+          <>
+            <div className="glass relative min-h-[420px] overflow-hidden rounded-2xl lg:min-h-0">
+              <BrainScene />
+              <div className="pointer-events-none absolute bottom-3 left-4 text-[10.5px] text-slate-500">
+                Drag to orbit · scroll to zoom · click a cyan ENT voxel to change
+                entry
+              </div>
+            </div>
+            <aside className="panel-scroll flex flex-col gap-4 pr-1 lg:min-h-0 lg:overflow-y-auto">
+              <ModeSelector />
+              {mode === 'guided' ? (
+                <>
+                  <PredictionPanel />
+                  <ControlPanel />
+                  <MetricsPanel />
+                </>
+              ) : (
+                <ExplorePanel />
+              )}
+              <LegendPanel />
+            </aside>
+          </>
+        )}
       </main>
 
       {!hasStarted && <IntroOverlay />}

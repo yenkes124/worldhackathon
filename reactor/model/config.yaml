@@ -1,0 +1,3 @@
+# Frame size of the software-rendered scene (RGB video track).
+width: 960
+height: 600
