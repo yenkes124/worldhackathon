@@ -121,6 +121,22 @@ npm run lint       # oxlint
 npm run typecheck  # tsc -b
 ```
 
+## Run the generated-brain explorer
+
+The hosted generated-brain explorer keeps the same safety framing: it is an
+educational, fictional demo, not medical software or anatomical guidance.
+
+```bash
+cp .env.example .env   # set REACTOR_API_KEY; keep it server-side
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173`, choose the **Generated brain** tab, and select
+**Start a hosted session**. The **Voxel grid** tab is the original client-side
+view. For production, run `npm run build && npm start`; `server/serve.mjs`
+serves `dist` and `/api/token`.
+
 ## Architecture
 
 ```

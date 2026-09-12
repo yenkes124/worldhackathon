@@ -177,3 +177,55 @@ port earns its cost only when the *server-side* model is the product — e.g. a
 heavier planner, a shared multi-user session, or a future swap-in of a learned
 transition model — and even then the symbolic planner should stay in the
 Runtime model, not a catalog model.
+
+## Update: hosted generated-brain explorer (option A — active path)
+
+Custom-model hosting on Reactor is currently gated: the account receives
+`403: serve access is not enabled for this account`. Modal self-hosting also
+needs a TURN relay for browser media. The chosen path is therefore a
+Reactor-hosted catalog world model instead; the earlier Runtime/Modal sections
+remain **option B (kept in the repo under `reactor/`)**.
+
+The explorer starts `reactor/lingbot-world-2` with the fictional, generated
+`public/brain-seed.jpg` and a scene prompt. It sends commands in this order:
+`set_image` → `set_prompt` → `set_seed` (`20240917`) → `start`. The model's
+`main_video` is rendered through `<ReactorView>`. Keyboard controls map to
+`set_move_longitudinal` (W/S), `set_move_lateral` (A/D),
+`set_look_horizontal` (←/→), `set_look_vertical` (↑/↓), and
+`set_camera_pose` (Q/E, layer up/down). The implementation lives in
+`src/explore/{BrainExplorer.tsx,useWorldSession.ts,explorerStore.ts,navigation.ts,MiniMap.tsx,ReactionPanel.tsx}`,
+`src/sim/reactions.ts`, and `server/token.mjs` (Vite middleware in development,
+`server/serve.mjs` in production).
+
+The world model exposes no coordinates, so the explorer dead-reckons its
+position on the 4×4×4 grid only from confirmed
+`chunk_complete.active_action` events: `CELL_PER_CHUNK = 0.1` cells,
+`YAW_PER_CHUNK = 15°`, and `CLIMB_PER_CHUNK = 0.2`. `OUTSIDE` cells act as
+walls. The TypeScript simulation (`grid` / `cellMeta` / `planner`) remains
+authoritative for the region, body reaction, and A* hint. This is deterministic
+for a given action sequence, but it is **not anatomical registration**; the
+generated scenery is non-repeatable in detail even with a seed.
+
+The server keeps `REACTOR_API_KEY` private and exchanges it at
+`POST https://api.reactor.inc/tokens` for a session-scoped JWT:
+
+```json
+{
+  "authorization_details": [
+    {
+      "type": "session",
+      "resources": {
+        "models": { "match": ["reactor/lingbot-world-2"] }
+      }
+    }
+  ]
+}
+```
+
+The browser caches that JWT until near `expires_at`. A session-scoped token
+only authorises sessions it created, so re-minting a token per request results
+in `403`.
+
+This path is usage-billed (about `$25/hr` while streaming), subject to an
+account concurrent-session quota of 5, and can occasionally return `429: no
+available capacity` from the platform. If that happens, try again.

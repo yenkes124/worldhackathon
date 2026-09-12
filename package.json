@@ -8,12 +8,14 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
+    "start": "node server/serve.mjs",
     "test": "vitest run",
     "typecheck": "tsc -b"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
+    "@reactor-team/js-sdk": "^3.0.2",
     "lucide-react": "^1.45.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
