@@ -35,7 +35,7 @@ const PulseCage = ({ color }: { color: string }) => {
   })
   return (
     <mesh ref={mesh}>
-      <boxGeometry args={[0.78, 0.78, 0.78]} />
+      <sphereGeometry args={[0.26, 12, 12]} />
       <meshBasicMaterial color={color} wireframe transparent opacity={0.95} />
     </mesh>
   )
@@ -71,7 +71,14 @@ export const KnowledgeVoxels = ({
         const isHovered = hovered
           ? sameKnowledgeCell(hovered.position, cell.position)
           : false
-        const size = status === 'KNOWN_TARGET' ? 0.58 : 0.5
+        const radius =
+          status === 'KNOWN_TARGET'
+            ? 0.16
+            : isHovered || isChecked || isProbe
+              ? 0.13
+              : status === 'UNKNOWN'
+                ? 0.09
+                : 0.11
 
         return (
           <group
@@ -89,34 +96,40 @@ export const KnowledgeVoxels = ({
                 if (status === 'KNOWN_ENTRY') onSelectEntry(cell.position)
               }}
             >
-              <boxGeometry args={[size, size, size]} />
+              <sphereGeometry args={[radius, 20, 20]} />
               <meshStandardMaterial
                 color={view.color}
                 emissive={view.color}
                 emissiveIntensity={
                   status === 'KNOWN_TARGET'
-                    ? 1.4
+                    ? 1.8
                     : isHovered || isChecked
-                      ? 0.9
+                      ? 1.2
                       : status === 'UNKNOWN'
-                        ? 0.08
-                        : 0.5
+                        ? 0.15
+                        : 0.8
                 }
                 transparent
-                opacity={isHovered ? Math.max(view.opacity, 0.55) : view.opacity}
+                opacity={
+                  isHovered
+                    ? Math.max(view.opacity, 0.75)
+                    : Math.min(1, view.opacity + 0.2)
+                }
                 roughness={0.35}
                 metalness={0.1}
               />
             </mesh>
-            <mesh>
-              <boxGeometry args={[size, size, size]} />
-              <meshBasicMaterial
-                color={view.color}
-                wireframe
-                transparent
-                opacity={status === 'UNKNOWN' ? 0.12 : 0.55}
-              />
-            </mesh>
+            {status !== 'UNKNOWN' && (
+              <mesh>
+                <sphereGeometry args={[radius * 1.7, 16, 16]} />
+                <meshBasicMaterial
+                  color={view.color}
+                  transparent
+                  opacity={status === 'KNOWN_TARGET' ? 0.28 : 0.14}
+                  depthWrite={false}
+                />
+              </mesh>
+            )}
 
             {isChecked && <PulseCage color={verdictStyle.color} />}
 

@@ -2,7 +2,8 @@ import { useReactor, useReactorMessage } from '@reactor-team/js-sdk'
 import { useCallback, useEffect, useRef } from 'react'
 import { scenePromptFor } from '../sim/reactions'
 import { RIGHT_HAND_TREMOR } from '../sim/scenario'
-import { useExplorer } from './explorerStore'
+import type { Action } from '../sim/types'
+import { headingFor, turnBetween, useExplorer } from './explorerStore'
 import type { Vertical } from './navigation'
 
 export const WORLD_MODEL = 'reactor/lingbot-world-2'
@@ -11,6 +12,17 @@ const SEED_IMAGE_URL = '/brain-seed.jpg'
 /** Camera-local translation bias for the pose layer (y is down). */
 const POSE_UP = [0, 0, 0, 0, -1, 0]
 const POSE_DOWN = [0, 0, 0, 0, 1, 0]
+
+/** Reactor answers 429 "no available capacity" when every hosted GPU is busy. */
+export const CAPACITY_RETRY_DELAYS_MS = [5_000, 10_000, 15_000]
+export const isCapacityError = (message: string) =>
+  /\b429\b/.test(message) || /no available (capacity|servers)/i.test(message)
+export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+/** How long the camera travels through the scenery for one node step. */
+export const STEP_TRAVEL_MS = 1_200
+/** How long a held look input takes to turn the camera a quarter turn. */
+export const TURN_90_MS = 1_200
+export const turnDurationMs = (degrees: number) => (Math.abs(degrees) / 90) * TURN_90_MS
 
 type Payload = Record<string, unknown>
 const asRecord = (value: unknown): Payload =>
@@ -34,8 +46,11 @@ export const useWorldSession = () => {
   const phase = useExplorer((s) => s.phase)
   const cellType = useExplorer((s) => s.cellType)
   const setPhase = useExplorer((s) => s.setPhase)
+  const setEngine = useExplorer((s) => s.setEngine)
   const setVertical = useExplorer((s) => s.setVertical)
   const onChunk = useExplorer((s) => s.onChunk)
+  const stepNode = useExplorer((s) => s.step)
+  const settle = useExplorer((s) => s.settle)
   const resetExplorer = useExplorer((s) => s.reset)
 
   const startedRef = useRef(false)
@@ -49,19 +64,51 @@ export const useWorldSession = () => {
     [sendCommand, setPhase],
   )
 
+  const cancelledRef = useRef(false)
+  const retryingRef = useRef(false)
+
   const begin = useCallback(async () => {
     resetExplorer()
     startedRef.current = false
     seedingRef.current = false
+    cancelledRef.current = false
     setPhase('connecting')
-    try {
-      await connect()
-    } catch (error) {
-      setPhase('error', error instanceof Error ? error.message : String(error))
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await connect()
+        return
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const delay = CAPACITY_RETRY_DELAYS_MS[attempt]
+        if (cancelledRef.current) return
+        if (!isCapacityError(message)) {
+          setPhase('error', message)
+          return
+        }
+        if (delay === undefined) {
+          // Primary model is saturated: hand over to the fallback world model,
+          // which mounts its own provider and starts immediately.
+          setEngine(
+            'happyoyster',
+            `${WORLD_MODEL} had no free capacity after ${CAPACITY_RETRY_DELAYS_MS.length + 1} attempts`,
+          )
+          return
+        }
+        retryingRef.current = true
+        setPhase(
+          'connecting',
+          `Reactor has no free capacity right now — retrying in ${delay / 1000}s (attempt ${attempt + 2} of ${CAPACITY_RETRY_DELAYS_MS.length + 1})`,
+        )
+        await sleep(delay)
+        retryingRef.current = false
+        if (cancelledRef.current) return
+        setPhase('connecting')
+      }
     }
-  }, [connect, resetExplorer, setPhase])
+  }, [connect, resetExplorer, setEngine, setPhase])
 
   const end = useCallback(async () => {
+    cancelledRef.current = true
     await disconnect().catch(() => undefined)
     setPhase('idle')
   }, [disconnect, setPhase])
@@ -90,13 +137,14 @@ export const useWorldSession = () => {
   }, [status, uploadFile, sendCommand, setPhase])
 
   useEffect(() => {
+    if (retryingRef.current) return
     if (status === 'disconnected' && phase !== 'idle' && phase !== 'error') {
       setPhase('idle')
     }
   }, [status, phase, setPhase])
 
   useEffect(() => {
-    if (lastError) setPhase('error', lastError.message)
+    if (lastError && !retryingRef.current) setPhase('error', lastError.message)
   }, [lastError, setPhase])
 
   useReactorMessage((message) => {
@@ -160,11 +208,7 @@ export const useWorldSession = () => {
         case 'a':
         case 'd':
           void send('set_move_lateral', {
-            move_lateral: held.has('a')
-              ? 'strafe_left'
-              : held.has('d')
-                ? 'strafe_right'
-                : 'idle',
+            move_lateral: held.has('a') ? 'strafe_left' : held.has('d') ? 'strafe_right' : 'idle',
           })
           break
         case 'ArrowLeft':
@@ -202,8 +246,63 @@ export const useWorldSession = () => {
     }
   }, [phase, send, climb])
 
+  // Discrete node move: the grid jumps to the neighbour immediately; the camera
+  // travels for a moment so the scenery visibly changes, then holds still. The
+  // dead-reckoned drift from that travel stays well inside the new cell.
+  const travellingRef = useRef(false)
+  const stepTo = useCallback(
+    async (action: Action) => {
+      if (travellingRef.current || phase !== 'exploring') return
+      const heading = useExplorer.getState().nav.heading
+      const prediction = stepNode(action)
+      if (!prediction) return
+      travellingRef.current = true
+      const target = headingFor(action)
+      const turn = target === undefined ? 0 : turnBetween(heading, target)
+      if (Math.abs(turn) >= 1) {
+        await send('set_look_horizontal', {
+          look_horizontal: turn > 0 ? 'right' : 'left',
+        })
+        await sleep(turnDurationMs(turn))
+        await send('set_look_horizontal', { look_horizontal: 'idle' })
+      }
+      const dz = prediction.action.delta[2]
+      if (dz !== 0) {
+        await send('set_camera_pose', {
+          camera_pose: dz > 0 ? POSE_UP : POSE_DOWN,
+        })
+      }
+      await send('set_move_longitudinal', { move_longitudinal: 'forward' })
+      await sleep(STEP_TRAVEL_MS)
+      await send('set_move_longitudinal', { move_longitudinal: 'idle' })
+      if (dz !== 0) await send('set_camera_pose', { camera_pose: [] })
+      settle(target ?? heading)
+      travellingRef.current = false
+    },
+    [phase, send, settle, stepNode],
+  )
+
+  // Back to the entry node: the symbolic state restarts and the camera is turned
+  // to face posterior again so later node steps turn from a known heading.
+  const resetPosition = useCallback(async () => {
+    if (travellingRef.current || phase !== 'exploring') return
+    travellingRef.current = true
+    const turn = turnBetween(useExplorer.getState().nav.heading, 0)
+    resetExplorer()
+    if (Math.abs(turn) >= 1) {
+      await send('set_look_horizontal', {
+        look_horizontal: turn > 0 ? 'right' : 'left',
+      })
+      await sleep(turnDurationMs(turn))
+      await send('set_look_horizontal', { look_horizontal: 'idle' })
+    }
+    await send('set_camera_pose', { camera_pose: [] })
+    settle(0)
+    travellingRef.current = false
+  }, [phase, resetExplorer, send, settle])
+
   const pause = useCallback(() => void send('pause'), [send])
   const resume = useCallback(() => void send('resume'), [send])
 
-  return { status, phase, begin, end, pause, resume }
+  return { status, phase, begin, end, pause, resume, stepTo, resetPosition }
 }

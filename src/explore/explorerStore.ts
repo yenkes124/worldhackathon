@@ -4,17 +4,14 @@ import { cellTypeAt, key, manhattan, sameCell } from '../sim/grid'
 import { planAStar } from '../sim/planner'
 import { bodyReaction, type BodyReaction } from '../sim/reactions'
 import { RIGHT_HAND_TREMOR } from '../sim/scenario'
-import type { CellType, PlanResult, Vec3 } from '../sim/types'
-import { actionForStep } from '../sim/worldModel'
+import type { Action, CellType, PlanResult, Prediction, Vec3 } from '../sim/types'
+import { ACTIONS, actionForStep, predictTransition } from '../sim/worldModel'
 import { advance, cellOf, initialNav, type NavState, type Vertical } from './navigation'
 
-export type ExplorerPhase =
-  | 'idle'
-  | 'connecting'
-  | 'seeding'
-  | 'exploring'
-  | 'paused'
-  | 'error'
+export type ExplorerPhase = 'idle' | 'connecting' | 'seeding' | 'exploring' | 'paused' | 'error'
+
+/** Which hosted Reactor world model renders the scenery. */
+export type WorldEngine = 'lingbot' | 'happyoyster'
 
 export interface VisitLog {
   cell: Vec3
@@ -25,6 +22,13 @@ export interface VisitLog {
 interface ExplorerState {
   phase: ExplorerPhase
   error: string | undefined
+  engine: WorldEngine
+  /** Set when the engine was switched automatically after a capacity failure. */
+  fallbackReason: string | undefined
+  /** ENT cell the dive starts from; chosen on the exterior brain view. */
+  entry: Vec3
+  /** True once the user has left the exterior view for the interior stream. */
+  dived: boolean
   nav: NavState
   vertical: Vertical
   cell: Vec3
@@ -40,7 +44,14 @@ interface ExplorerState {
   chunk: number
   lastAction: string
   setPhase: (phase: ExplorerPhase, error?: string) => void
+  setEngine: (engine: WorldEngine, fallbackReason?: string) => void
+  setEntry: (entry: Vec3) => void
+  setDived: (dived: boolean) => void
   setVertical: (vertical: Vertical) => void
+  /** Move one node along `action`; returns the transition that was applied, or undefined if it leaves the volume. */
+  step: (action: Action) => Prediction | undefined
+  /** Re-centre the dead-reckoned position on the current node after a scripted travel. */
+  settle: (heading?: number) => void
   /** Apply one `chunk_complete` event from the world model. */
   onChunk: (chunk: number, activeAction: string) => void
   reset: () => void
@@ -63,13 +74,14 @@ const suggest = (cell: Vec3) => {
   }
 }
 
-const fresh = () => {
-  const nav = initialNav(ENTRY)
+const fresh = (entry: Vec3 = ENTRY) => {
+  const nav = initialNav(entry)
   const cell = cellOf(nav.position)
   const cellType = cellTypeAt(cell)
   return {
     phase: 'idle' as ExplorerPhase,
     error: undefined,
+    entry,
     nav,
     vertical: 0 as Vertical,
     cell,
@@ -85,11 +97,53 @@ const fresh = () => {
   }
 }
 
+/** State delta for arriving in `cell` (a different cell from the current one). */
+const enterCell = (state: ExplorerState, nav: NavState, cell: Vec3, chunk: number) => {
+  const cellType = cellTypeAt(cell)
+  const meta = CELL_META[cellType]
+  return {
+    nav,
+    chunk,
+    cell,
+    cellType,
+    reaction: bodyReaction(cellType),
+    ...suggest(cell),
+    visited: [...state.visited, { cell, type: cellType, chunk }],
+    noGoEntries: state.noGoEntries + (meta.noGo ? 1 : 0),
+    accumulatedRisk: state.accumulatedRisk + meta.risk,
+    reachedTarget: state.reachedTarget || sameCell(cell, TARGET),
+  }
+}
+
 export const useExplorer = create<ExplorerState>((set, get) => ({
   ...fresh(),
+  engine: 'lingbot',
+  fallbackReason: undefined,
+  dived: false,
 
   setPhase: (phase, error) => set({ phase, error }),
+  setEngine: (engine, fallbackReason) => set({ engine, fallbackReason }),
+  setEntry: (entry) => set({ ...fresh(entry), phase: get().phase }),
+  setDived: (dived) => set({ dived }),
   setVertical: (vertical) => set({ vertical }),
+
+  step: (action) => {
+    const state = get()
+    const prediction = predictTransition(state.cell, action)
+    if (!prediction.inBounds || prediction.predictedType === 'OUTSIDE') return undefined
+    const heading = headingFor(action) ?? state.nav.heading
+    const nav: NavState = { position: prediction.to, heading }
+    set({
+      ...enterCell(state, nav, prediction.to, state.chunk),
+      lastAction: action.id,
+    })
+    return prediction
+  },
+
+  settle: (heading) =>
+    set((state) => ({
+      nav: { position: state.cell, heading: heading ?? state.nav.heading },
+    })),
 
   onChunk: (chunk, activeAction) => {
     const state = get()
@@ -99,25 +153,26 @@ export const useExplorer = create<ExplorerState>((set, get) => ({
       set({ nav, chunk, lastAction: activeAction })
       return
     }
-    const cellType = cellTypeAt(cell)
-    const meta = CELL_META[cellType]
-    set({
-      nav,
-      chunk,
-      lastAction: activeAction,
-      cell,
-      cellType,
-      reaction: bodyReaction(cellType),
-      ...suggest(cell),
-      visited: [...state.visited, { cell, type: cellType, chunk }],
-      noGoEntries: state.noGoEntries + (meta.noGo ? 1 : 0),
-      accumulatedRisk: state.accumulatedRisk + meta.risk,
-      reachedTarget: state.reachedTarget || sameCell(cell, TARGET),
-    })
+    set({ ...enterCell(state, nav, cell, chunk), lastAction: activeAction })
   },
 
-  reset: () => set({ ...fresh(), phase: get().phase }),
+  reset: () => set({ ...fresh(get().entry), phase: get().phase }),
 }))
+
+/** Compass heading (0 = posterior/+y, 90 = right/+x) a horizontal step faces; undefined for vertical. */
+export const headingFor = (action: Action): number | undefined => {
+  const [dx, dy] = action.delta
+  if (dx === 0 && dy === 0) return undefined
+  return ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360
+}
+
+/** Signed shortest turn from `from` to `to`, in degrees (positive = clockwise/right). */
+export const turnBetween = (from: number, to: number): number =>
+  ((((to - from) % 360) + 540) % 360) - 180
+
+/** The six neighbouring nodes of `cell` with the world model's verdict on each. */
+export const moveOptions = (cell: Vec3): Prediction[] =>
+  ACTIONS.map((action) => predictTransition(cell, action))
 
 export const EXPLORER_ENTRY = ENTRY
 export const EXPLORER_TARGET = TARGET
