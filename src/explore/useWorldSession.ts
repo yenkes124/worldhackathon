@@ -12,6 +12,12 @@ const SEED_IMAGE_URL = '/brain-seed.jpg'
 const POSE_UP = [0, 0, 0, 0, -1, 0]
 const POSE_DOWN = [0, 0, 0, 0, 1, 0]
 
+/** Reactor answers 429 "no available capacity" when every hosted GPU is busy. */
+const CAPACITY_RETRY_DELAYS_MS = [5_000, 10_000, 15_000, 20_000, 30_000, 30_000]
+const isCapacityError = (message: string) =>
+  /\b429\b/.test(message) || /no available (capacity|servers)/i.test(message)
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
 type Payload = Record<string, unknown>
 const asRecord = (value: unknown): Payload =>
   typeof value === 'object' && value !== null ? (value as Payload) : {}
@@ -49,19 +55,41 @@ export const useWorldSession = () => {
     [sendCommand, setPhase],
   )
 
+  const cancelledRef = useRef(false)
+  const retryingRef = useRef(false)
+
   const begin = useCallback(async () => {
     resetExplorer()
     startedRef.current = false
     seedingRef.current = false
+    cancelledRef.current = false
     setPhase('connecting')
-    try {
-      await connect()
-    } catch (error) {
-      setPhase('error', error instanceof Error ? error.message : String(error))
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await connect()
+        return
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const delay = CAPACITY_RETRY_DELAYS_MS[attempt]
+        if (!isCapacityError(message) || delay === undefined || cancelledRef.current) {
+          setPhase('error', message)
+          return
+        }
+        retryingRef.current = true
+        setPhase(
+          'connecting',
+          `Reactor has no free capacity right now — retrying in ${delay / 1000}s (attempt ${attempt + 2} of ${CAPACITY_RETRY_DELAYS_MS.length + 1})`,
+        )
+        await sleep(delay)
+        retryingRef.current = false
+        if (cancelledRef.current) return
+        setPhase('connecting')
+      }
     }
   }, [connect, resetExplorer, setPhase])
 
   const end = useCallback(async () => {
+    cancelledRef.current = true
     await disconnect().catch(() => undefined)
     setPhase('idle')
   }, [disconnect, setPhase])
@@ -90,13 +118,14 @@ export const useWorldSession = () => {
   }, [status, uploadFile, sendCommand, setPhase])
 
   useEffect(() => {
+    if (retryingRef.current) return
     if (status === 'disconnected' && phase !== 'idle' && phase !== 'error') {
       setPhase('idle')
     }
   }, [status, phase, setPhase])
 
   useEffect(() => {
-    if (lastError) setPhase('error', lastError.message)
+    if (lastError && !retryingRef.current) setPhase('error', lastError.message)
   }, [lastError, setPhase])
 
   useReactorMessage((message) => {

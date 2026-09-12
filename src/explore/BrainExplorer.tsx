@@ -94,9 +94,18 @@ const Stage = () => {
                 <Loader2 className="mx-auto h-6 w-6 animate-spin text-sky-300" aria-hidden />
                 <p className="mt-3 text-[13px] text-slate-200">
                   {phase === 'connecting'
-                    ? `Connecting to Reactor (${status})…`
+                    ? (error ?? `Connecting to Reactor (${status})…`)
                     : 'Seeding the world: image, region prompt, seed 20240917…'}
                 </p>
+                {phase === 'connecting' && error && (
+                  <button
+                    type="button"
+                    onClick={() => void end()}
+                    className="mt-4 rounded-lg border border-slate-700/60 px-3 py-1.5 text-[11px] text-slate-300 transition hover:border-sky-400/40"
+                  >
+                    Cancel
+                  </button>
+                )}
               </>
             )}
           </div>
